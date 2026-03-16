@@ -631,8 +631,43 @@ traitMat <- traitMat[rownames(MEs_all), , drop = FALSE]
 stopifnot(identical(rownames(traitMat), rownames(MEs_all)))
 
 
-moduleTraitCor <- cor(MEs_all, traitMat, method = "spearman", use = "pairwise.complete.obs")
-moduleTraitP   <- corPvalueStudent(moduleTraitCor, nSamples = nrow(MEs_all))
+trait_method <- ifelse(
+  colnames(traitMat) %in% c("gi", "weight", "lustre", "quality"),
+  "pearson",
+  "spearman"
+)
+
+moduleTraitCor <- matrix(
+  NA,
+  nrow = ncol(MEs_all),
+  ncol = ncol(traitMat),
+  dimnames = list(colnames(MEs_all), colnames(traitMat))
+)
+
+moduleTraitP <- matrix(
+  NA,
+  nrow = ncol(MEs_all),
+  ncol = ncol(traitMat),
+  dimnames = list(colnames(MEs_all), colnames(traitMat))
+)
+
+for (i in seq_len(ncol(MEs_all))) {
+  for (j in seq_len(ncol(traitMat))) {
+    x <- MEs_all[, i]
+    y <- traitMat[, j]
+    ok <- complete.cases(x, y)
+
+    if (sum(ok) >= 3) {
+      tmp <- if (trait_method[j] == "spearman") {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "spearman", exact = FALSE))
+      } else {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "pearson"))
+      }
+      moduleTraitCor[i, j] <- unname(tmp$estimate)
+      moduleTraitP[i, j] <- tmp$p.value
+    }
+  }
+}
 
 textMatrix <- paste0(signif(moduleTraitCor, 2), "\n(",
                      signif(moduleTraitP, 1), ")")
@@ -650,7 +685,7 @@ labeledHeatmap(
   setStdMargins = FALSE,
   cex.text    = 0.7,
   zlim        = c(-1, 1),
-  main        = "Global module–trait relationships (Spearman)"
+  main        = "Global module–trait relationships"
 )
 
 ## Optional: also compute an overall ANOVA p-value per module for phenotype (clean inference)
@@ -692,11 +727,17 @@ stopifnot(identical(rownames(MEs_use), rownames(trait_use)))
 stopifnot(nrow(MEs_use) == nrow(trait_use))
 
 # Correlation matrix
-moduleTraitCor <- cor(
-  MEs_use,
-  trait_use,
-  use = "pairwise.complete.obs",
-  method = "spearman"
+trait_method_use <- ifelse(
+  colnames(trait_use) %in% c("gi", "weight", "lustre", "quality"),
+  "pearson",
+  "spearman"
+)
+
+moduleTraitCor <- matrix(
+  NA,
+  nrow = ncol(MEs_use),
+  ncol = ncol(trait_use),
+  dimnames = list(colnames(MEs_use), colnames(trait_use))
 )
 
 # P-value matrix
@@ -715,9 +756,12 @@ for (i in seq_len(ncol(MEs_use))) {
     ok <- complete.cases(x, y)
 
     if (sum(ok) >= 3) {
-      tmp <- suppressWarnings(
-        cor.test(x[ok], y[ok], method = "spearman", exact = FALSE)
-      )
+      tmp <- if (trait_method_use[j] == "spearman") {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "spearman", exact = FALSE))
+      } else {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "pearson"))
+      }
+      moduleTraitCor[i, j] <- unname(tmp$estimate)
       moduleTraitPvalue[i, j] <- tmp$p.value
     }
   }

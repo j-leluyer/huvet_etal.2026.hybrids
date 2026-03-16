@@ -35,8 +35,43 @@ MEs <- orderMEs(MEs)
 
 datTraits_plot <- datTraits[, !colnames(datTraits) %in% c("AA", "GG", "matA", "matG"), drop = FALSE]
 
-moduleTraitCor <- cor(MEs, datTraits_plot, method = "spearman", use = "pairwise.complete.obs")
-moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSamples = nrow(datExpr))
+trait_method <- ifelse(
+  colnames(datTraits_plot) %in% c("gi", "weight", "lustre", "quality"),
+  "pearson",
+  "spearman"
+)
+
+moduleTraitCor <- matrix(
+  NA,
+  nrow = ncol(MEs),
+  ncol = ncol(datTraits_plot),
+  dimnames = list(colnames(MEs), colnames(datTraits_plot))
+)
+
+moduleTraitPvalue <- matrix(
+  NA,
+  nrow = ncol(MEs),
+  ncol = ncol(datTraits_plot),
+  dimnames = list(colnames(MEs), colnames(datTraits_plot))
+)
+
+for (i in seq_len(ncol(MEs))) {
+  for (j in seq_len(ncol(datTraits_plot))) {
+    x <- MEs[, i]
+    y <- datTraits_plot[, j]
+    ok <- complete.cases(x, y)
+
+    if (sum(ok) >= 3) {
+      tmp <- if (trait_method[j] == "spearman") {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "spearman", exact = FALSE))
+      } else {
+        suppressWarnings(cor.test(x[ok], y[ok], method = "pearson"))
+      }
+      moduleTraitCor[i, j] <- unname(tmp$estimate)
+      moduleTraitPvalue[i, j] <- tmp$p.value
+    }
+  }
+}
 moduleTraitAdjPvalue <- matrix(
   p.adjust(as.vector(moduleTraitPvalue), method = "fdr"),
   nrow = nrow(moduleTraitPvalue),
@@ -69,7 +104,7 @@ p_heatmap <- ggplot(heatmap_df, aes(x = trait, y = module, fill = correlation)) 
   geom_text(aes(label = label), size = 3, lineheight = 0.9) +
   scale_fill_gradient2(
     low = "#3B4CC0", mid = "white", high = "#B40426",
-    midpoint = 0, limits = c(-1, 1), name = "Spearman\nrho"
+    midpoint = 0, limits = c(-1, 1), name = "Correlation"
   ) +
   labs(x = NULL, y = NULL, title = "Module-trait heatmap") +
   theme_classic() +
