@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Local editor settings
+.vscode/
+
 # R session/cache
 .Rhistory
 .RData
@@ -24,13 +27,11 @@ output/*
 # Keep ePST Table/Figure 4 artifacts tracked
 !output/fig4_epst_supporting.png
 !output/fig4_epst_supporting.pdf
-!output/epst_summary_stats.tsv
-!output/epst_gene_values.tsv
-!output/epst_with_deseq_dominance.tsv
-!output/epst_set_strong.tsv
-!output/epst_set_consistent.tsv
-!output/epst_set_noisy.tsv
+!output/Table_S2.ePST_summary.xlsx
 
 # Temporary files
 *.tmp
 *.log
+
+# Legacy cluster job scripts for ortho build
+script/ortho/jobs/
