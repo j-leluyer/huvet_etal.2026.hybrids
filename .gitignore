@@ -21,6 +21,16 @@ output/*
 !output/fig3_dominance_supporting.png
 !output/fig3_dominance_supporting.pdf
 
+# Keep ePST Table/Figure 4 artifacts tracked
+!output/fig4_epst_supporting.png
+!output/fig4_epst_supporting.pdf
+!output/epst_summary_stats.tsv
+!output/epst_gene_values.tsv
+!output/epst_with_deseq_dominance.tsv
+!output/epst_set_strong.tsv
+!output/epst_set_consistent.tsv
+!output/epst_set_noisy.tsv
+
 # Temporary files
 *.tmp
 *.log
