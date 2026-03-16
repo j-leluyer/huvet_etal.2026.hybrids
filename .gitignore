@@ -13,6 +13,10 @@ output/*
 !output/fig1_combined_pca.png
 !output/fig1_combined_pca.pdf
 
+# Keep Figure 2 artifacts tracked
+!output/fig2_heatmap_red_gs_kme.png
+!output/fig2_heatmap_red_gs_kme.pdf
+
 # Temporary files
 *.tmp
 *.log

@@ -804,6 +804,59 @@ GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSam
 names(geneTraitSignificance) = paste("GS.", names(cross), sep="");
 names(GSPvalue) = paste("p.GS.", names(cross), sep="");
 
+## Figure 2: module-trait heatmap + red module GS vs kME ----
+module <- "red"
+column <- match(module, modNames)
+moduleGenes <- moduleColors == module
+
+df_module_red <- data.frame(
+  kME = abs(geneModuleMembership[moduleGenes, column]),
+  GS = abs(geneTraitSignificance[moduleGenes, 1])
+)
+
+ct_red <- cor.test(df_module_red$kME, df_module_red$GS, method = "pearson")
+
+p_module_red <- ggplot(df_module_red, aes(x = kME, y = GS)) +
+  geom_point(color = module, alpha = 0.7, size = 1.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.7) +
+  labs(
+    x = paste("Module Membership in", module, "module"),
+    y = "Gene significance for cross",
+    title = "Red module: GS vs kME"
+  ) +
+  annotate(
+    "text",
+    x = 0.05,
+    y = 0.95,
+    hjust = 0,
+    vjust = 1,
+    label = paste0(
+      "r = ", sprintf("%.2f", unname(ct_red$estimate)),
+      "\np = ", format.pval(ct_red$p.value, digits = 2, eps = 1e-4)
+    ),
+    size = 4
+  ) +
+  theme_classic()
+
+figure2 <- (p_heatmap | p_module_red) +
+  patchwork::plot_layout(widths = c(1.8, 1)) +
+  patchwork::plot_annotation(tag_levels = "A")
+
+ggsave(
+  filename = "output/fig2_heatmap_red_gs_kme.png",
+  plot = figure2,
+  width = 16,
+  height = 7,
+  dpi = 300
+)
+
+ggsave(
+  filename = "output/fig2_heatmap_red_gs_kme.pdf",
+  plot = figure2,
+  width = 16,
+  height = 7
+)
+
 ## plot correlation
 ### significance by module
 
