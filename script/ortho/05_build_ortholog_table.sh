@@ -23,7 +23,7 @@ for cmd in seqkit diamond TransDecoder.LongOrfs TransDecoder.Predict python3; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "$cmd is required in PATH" >&2; exit 1; }
 done
 
-TX2GENE="0_ref/combined_tx/tx2gene.with_mito.tsv"
+TX2GENE="info/tx2gene.with_mito.tsv"
 CA_REF="0_ref/CA.ref.fa"
 CG_REF="0_ref/CG.ref.fa"
 ORTHO_IN="ortholog_1to1.tsv"

@@ -12,7 +12,7 @@ cd "$PROJECT_DIR"
 
 command -v salmon >/dev/null 2>&1 || { echo "salmon is required in PATH" >&2; exit 1; }
 
-INDEX_DIR="${INDEX_DIR:-0_ref/combined_tx/salmon_index}"
+INDEX_DIR="${INDEX_DIR:-info/salmon_index}"
 TRIM_DIR="${TRIM_DIR:-3-trimmed}"
 OUT_DIR="${OUT_DIR:-4-mapped-salmon}"
 THREADS="${THREADS:-12}"

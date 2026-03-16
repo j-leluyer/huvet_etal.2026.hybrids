@@ -6,8 +6,8 @@ cd "$PROJECT_DIR"
 
 command -v salmon >/dev/null 2>&1 || { echo "salmon is required in PATH" >&2; exit 1; }
 
-REFERENCE="${REFERENCE:-0_ref/combined_tx/CA_CG_all.tag.fa}"
-INDEX_DIR="${INDEX_DIR:-0_ref/combined_tx/salmon_index}"
+REFERENCE="${REFERENCE:-info/CA_CG_all.tag.fa}"
+INDEX_DIR="${INDEX_DIR:-info/salmon_index}"
 THREADS="${THREADS:-4}"
 KMER="${KMER:-31}"
 

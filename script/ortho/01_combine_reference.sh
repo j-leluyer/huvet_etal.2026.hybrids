@@ -8,7 +8,7 @@ command -v bedtools >/dev/null 2>&1 || { echo "bedtools is required in PATH" >&2
 
 CA_GFF="0_ref/genomic.CA.fixed.gff"
 CG_GFF="0_ref/genomic.CG.fixed.gff"
-COMBINED_DIR="0_ref/combined_tx"
+COMBINED_DIR="info"
 COMBINED_FASTA="$COMBINED_DIR/CA_CG_all.tag.fa"
 TX2GENE_OUT="$COMBINED_DIR/tx2gene.with_mito.tsv"
 

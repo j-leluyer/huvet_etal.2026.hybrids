@@ -6,7 +6,7 @@ cd "$PROJECT_DIR"
 
 BASE="${BASE:-4-mapped-salmon}"
 ORTHO="${ORTHO:-ortholog_1to1.with_mito.tsv}"
-TX2GENE="${TX2GENE:-0_ref/combined_tx/tx2gene.with_mito.tsv}"
+TX2GENE="${TX2GENE:-info/tx2gene.with_mito.tsv}"
 OUTDIR="${OUTDIR:-ortho_quants}"
 OUTMATRIX="${OUTMATRIX:-ortho_counts_matrix.tsv}"
 
