@@ -37,6 +37,8 @@ get_arg_value <- function(flag) {
 go_file <- get_arg_value("--go-file")
 if (is.null(go_file)) {
   candidates <- c(
+    list.files("data", pattern = "GCF_.*background\\.(tab|tsv|txt)$", full.names = TRUE),
+    list.files("data", pattern = "background\\.(tab|tsv|txt)$", full.names = TRUE),
     list.files("data", pattern = "funcannot.*\\.(csv|tsv|txt)$", full.names = TRUE),
     list.files("data", pattern = "GO.*\\.(csv|tsv|txt)$", full.names = TRUE)
   )
