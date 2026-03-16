@@ -28,6 +28,7 @@ output/*
 !output/fig4_epst_supporting.png
 !output/fig4_epst_supporting.pdf
 !output/Table_S2.ePST_summary.xlsx
+!output/Table_S3.gsea.xlsx
 
 # Temporary files
 *.tmp

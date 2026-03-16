@@ -8,6 +8,10 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
+if (!requireNamespace("writexl", quietly = TRUE)) {
+  install.packages("writexl", repos = "https://cloud.r-project.org")
+}
+
 args <- commandArgs(trailingOnly = TRUE)
 script_args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", script_args[grep("--file=", script_args)])
@@ -184,8 +188,15 @@ if (length(pathways) == 0) {
     file = "output/fgsea_AG_vs_GA_log2FC.tsv",
     sep = "\t"
   )
+  writexl::write_xlsx(
+    list(
+      fgsea_results = data.frame(),
+      ranks = data.frame(gene = names(ranks), rank_log2FC = as.numeric(ranks))
+    ),
+    path = "output/Table_S3.gsea.xlsx"
+  )
   message("No pathways left after intersection and size filtering (5-500).")
-  message("Created rank and term2gene files; FGSEA results file is empty.")
+  message("Created rank and term2gene files, and output/Table_S3.gsea.xlsx; FGSEA results file is empty.")
   quit(save = "no", status = 0)
 }
 
@@ -198,7 +209,24 @@ fg <- fgseaMultilevel(
 ) %>%
   arrange(padj)
 
+fg_xlsx <- as.data.frame(fg)
+if ("leadingEdge" %in% colnames(fg_xlsx)) {
+  fg_xlsx$leadingEdge <- vapply(
+    fg_xlsx$leadingEdge,
+    function(x) paste(as.character(x), collapse = ";"),
+    character(1)
+  )
+}
+
 fwrite(as.data.table(fg), file = "output/fgsea_AG_vs_GA_log2FC.tsv", sep = "\t")
+
+writexl::write_xlsx(
+  list(
+    fgsea_results = fg_xlsx,
+    ranks = data.frame(gene = names(ranks), rank_log2FC = as.numeric(ranks))
+  ),
+  path = "output/Table_S3.gsea.xlsx"
+)
 
 # 5) Top enrichment plot
 if (nrow(fg) > 0) {
@@ -213,4 +241,5 @@ message("Created:")
 message(" - output/fgsea_ranks_AG_vs_GA_log2FC.tsv")
 message(" - output/fgsea_term2gene_from_go.tsv")
 message(" - output/fgsea_AG_vs_GA_log2FC.tsv")
+message(" - output/Table_S3.gsea.xlsx")
 message(" - output/fgsea_top_enrichment_AG_vs_GA.png (if at least one pathway)")
