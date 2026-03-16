@@ -22,10 +22,16 @@ From the project root:
 Rscript script/rnaseq_ortho.R
 ```
 
-Optionally, pass an explicit project directory:
+If you launch it from another folder, pass a relative project directory:
 
 ```bash
-Rscript script/rnaseq_ortho.R /absolute/path/to/huvet_etal.2026.hybrids
+Rscript script/rnaseq_ortho.R .
+```
+
+Generate Figure 1 only (combined PCA):
+
+```bash
+Rscript script/make_fig1_combined_pca.R
 ```
 
 ## Notes

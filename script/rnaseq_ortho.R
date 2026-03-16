@@ -266,6 +266,21 @@ combined_plot_fig1 <- (graph.pcaNuc | graph.pcaMito) +
 
 combined_plot_fig1
 
+ggsave(
+  filename = "output/fig1_combined_pca.png",
+  plot = combined_plot_fig1,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+ggsave(
+  filename = "output/fig1_combined_pca.pdf",
+  plot = combined_plot_fig1,
+  width = 12,
+  height = 6
+)
+
 # plot Pheatmap of mitochrondria
 # keep only mitochondrial genes
 vsd_mito <- vst.mat[rownames(vst.mat) %in% mito_ids, ]
