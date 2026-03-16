@@ -192,8 +192,27 @@ run_dominance <- function(dds_sub, label, alpha = 0.05, delta = 0.25) {
     class = class_AG
   )
 
-  p_scatter <- ggplot(scatter_df, aes(x = x, y = y, color = class)) +
-    geom_point(alpha = 0.5, size = 0.8, na.rm = TRUE) +
+  class_levels <- c("Ambiguous", "Additive", "AA_dominant", "GG_dominant", "Overdominant", "Underdominant")
+  scatter_df$class <- factor(scatter_df$class, levels = class_levels)
+
+  dom_cols <- c(
+    "Additive" = "#377EB8",
+    "AA_dominant" = "#4DAF4A",
+    "GG_dominant" = "#984EA3",
+    "Overdominant" = "#E41A1C",
+    "Underdominant" = "#FF7F00"
+  )
+
+  has_non_ambiguous <- any(!is.na(scatter_df$class) & scatter_df$class != "Ambiguous")
+
+  p_scatter <- ggplot(scatter_df, aes(x = x, y = y)) +
+    geom_point(
+      data = subset(scatter_df, class == "Ambiguous"),
+      color = "grey85",
+      alpha = 0.45,
+      size = 0.8,
+      na.rm = TRUE
+    ) +
     geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
     geom_abline(intercept = 0, slope = 0.5, color = "blue", linetype = "dashed") +
     geom_abline(intercept = 0, slope = 0, color = "darkgreen", linetype = "dashed") +
@@ -204,6 +223,18 @@ run_dominance <- function(dds_sub, label, alpha = 0.05, delta = 0.25) {
       y = "AG vs AA (log2FC)",
       color = "Class"
     )
+
+  if (has_non_ambiguous) {
+    p_scatter <- p_scatter +
+      geom_point(
+        data = subset(scatter_df, class != "Ambiguous"),
+        aes(color = class),
+        alpha = 0.75,
+        size = 0.9,
+        na.rm = TRUE
+      ) +
+      scale_color_manual(values = dom_cols, drop = FALSE)
+  }
 
   ggsave(
     filename = file.path("output", paste0("dominance_scatter_AG_", label, ".png")),
@@ -244,17 +275,16 @@ res_nuclear <- run_dominance(dds_hyb, label = "nuclear")
 dds_mit <- dds[rownames(dds) %in% mito_ids, ]
 res_mito <- run_dominance(dds_mit, label = "mito")
 
-# Supporting Figure 3: dominance overview
+# Supporting Figure 3: dominance overview (nuclear only)
 fig3 <-
-  (res_nuclear$p_heat + res_nuclear$p_scatter) /
-  (res_mito$p_heat + res_mito$p_scatter) +
-  plot_annotation(tag_levels = "A", title = "Figure 3. Dominance effects overview")
+  (res_nuclear$p_heat + res_nuclear$p_scatter) +
+  plot_annotation(tag_levels = "A", title = "Figure 3. Dominance effects overview (nuclear)")
 
 ggsave(
   filename = "output/fig3_dominance_supporting.png",
   plot = fig3,
   width = 14,
-  height = 10,
+  height = 6,
   dpi = 300
 )
 
@@ -262,7 +292,7 @@ ggsave(
   filename = "output/fig3_dominance_supporting.pdf",
   plot = fig3,
   width = 14,
-  height = 10
+  height = 6
 )
 
 # Optional gene-level expression plots if data objects are present
