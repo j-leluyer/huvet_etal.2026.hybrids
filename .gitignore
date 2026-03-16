@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# R session/cache
+.Rhistory
+.RData
+.Rproj.user/
+
+# Large generated analysis outputs
+output/
+
+# Temporary files
+*.tmp
+*.log
