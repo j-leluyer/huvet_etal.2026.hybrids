@@ -61,7 +61,7 @@ graph.pcaNuc <- PCANuc + theme_glob + scale_color_manual(values = couleurs) +
                     labels = c("AA" = "Cangulata", "GG" = "Cgigas", "AG" = "Cang-Cgig", "GA" = "Cgig-Cang")) +
   geom_hline(yintercept = 0, linetype = "dotted") +
   geom_vline(xintercept = 0, linetype = "dotted") +
-  annotate(geom = "text", x = -10, y = 30, label = "PCA - Nucl. orthogroups (N = ~20k)", color = "black", size = 4)
+  annotate(geom = "text", x = -10, y = 30, label = "Nucl. orthogroups (N ~ 20k)", color = "black", size = 4)
 
 keep_mito <- rownames(vsd.fast) %in% mito_ids
 plotDataMito <- plotPCA(vsd.fast[keep_mito, ], intgroup = c("Cross", "gi", "weight"), returnData = TRUE)
@@ -80,7 +80,9 @@ graph.pcaMito <- PCAMito + theme_glob + scale_color_manual(values = couleurs) +
   annotate(geom = "text", x = 0, y = 3, label = "Mito. orthogroups (N = 37)", color = "black", size = 4)
 
 combined_plot_fig1 <- (graph.pcaNuc | graph.pcaMito) +
-  plot_annotation(tag_levels = "A")
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(legend.position = "right")
 
 ggsave("output/fig1_combined_pca.png", combined_plot_fig1, width = 12, height = 6, dpi = 300)
 ggsave("output/fig1_combined_pca.pdf", combined_plot_fig1, width = 12, height = 6)

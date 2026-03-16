@@ -262,7 +262,9 @@ graph.pcaMito
 # Combine plots
 library(patchwork)
 combined_plot_fig1 <- (graph.pcaNuc | graph.pcaMito) +
-  plot_annotation(tag_levels = "A")
+  plot_layout(guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(legend.position = "right")
 
 combined_plot_fig1
 
