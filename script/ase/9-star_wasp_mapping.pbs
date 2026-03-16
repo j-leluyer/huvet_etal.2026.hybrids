@@ -1,0 +1,92 @@
+#!/bin/bash
+#PBS -N star.__BASE__
+#PBS -o 98-logfiles/starW.__BASE__.err
+#PBS -l walltime=15:00:00
+#PBS -l mem=30g
+#PBS -l ncpus=8
+#PBS -q omp
+#PBS -r n
+
+set -euo pipefail
+
+
+# Global variables
+DATAOUTPUT="/home1/scratch/jleluyer/hybrids/4-mapped/starW"
+DATAINPUT="/home1/scratch/jleluyer/hybrids/3-trimmed"
+OUTDIR="/home1/scratch/jleluyer/hybrids/5-snps"
+OUTPREFIX="pb"
+MARKER_VCF_ACGT="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.vcf.gz"
+STAR_VCF="${OUTDIR}/${OUTPREFIX}.star_only.vcf.gz"
+# For genome
+GENOMEFOLDER="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas"
+FASTA="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+GENOME="star_genome_mito_index"
+platform="Illumina"
+NCPUS=8
+GTF="genomic.mito.gtf"
+READ_DECOMP_THREADS=2
+
+#move to present working dir
+
+cd $PBS_O_WORKDIR
+
+. /appli/bioinfo/star/2.7.11a/env.sh
+. /appli/bioinfo/samtools/1.22.1/env.sh
+
+base=__BASE__
+
+R1="$DATAINPUT/${base}_R1.paired.fastq.gz"
+R2="$DATAINPUT/${base}_R2.paired.fastq.gz"
+GENOMEDIR="$GENOMEFOLDER/$GENOME"
+
+[[ -f "$R1" ]] || { echo "Missing read file: $R1" >&2; exit 1; }
+[[ -f "$R2" ]] || { echo "Missing read file: $R2" >&2; exit 1; }
+[[ -d "$GENOMEDIR" ]] || { echo "Missing STAR genome index: $GENOMEDIR" >&2; exit 1; }
+
+if [[ -f "$STAR_VCF" ]]; then
+  WASP_VCF="$STAR_VCF"
+elif [[ -f "$MARKER_VCF_ACGT" ]]; then
+  WASP_VCF="$MARKER_VCF_ACGT"
+else
+  echo "Missing WASP VCF. Expected $STAR_VCF or $MARKER_VCF_ACGT" >&2
+  exit 1
+fi
+
+mkdir -p "$DATAOUTPUT"
+
+# Align reads with WASP SNP list
+echo "Aligning $base"
+STAR \
+  --runThreadN "$NCPUS" \
+  --genomeDir "$GENOMEDIR" \
+  --readFilesIn \
+    "$R1" \
+    "$R2" \
+  --readFilesCommand "pigz -dc -p ${READ_DECOMP_THREADS}" \
+  --sjdbGTFfile "$GENOMEFOLDER/$GTF" \
+  --outFilterMismatchNoverReadLmax 0.04 \
+  --alignIntronMin 20 \
+  --alignIntronMax 500000 \
+  --outFilterMultimapNmax 1 \
+  --outFilterMatchNminOverLread 0.8 \
+  --outSAMattrRGline ID:"$base" SM:"$base" PL:ILLUMINA \
+  --outSAMtype BAM Unsorted \
+  --outFileNamePrefix "$DATAOUTPUT"/"$base"_ \
+  --varVCFfile "$WASP_VCF" \
+  --waspOutputMode SAMtag
+
+[[ -f "$DATAOUTPUT/${base}_Aligned.out.bam" ]] || { echo "STAR output BAM missing for $base" >&2; exit 1; }
+
+# Filter BAM (mapped primary alignments, MAPQ>=10)
+samtools view -@ "$NCPUS" -m 1G -b \
+  "$DATAOUTPUT/${base}_Aligned.out.bam" \
+  -q 10 -F 0x4 -F 0x100 -F 0x800 \
+  > "$DATAOUTPUT/${base}.filtered.bam"
+
+# Coordinate-sort + index final BAM
+echo "Creating sorted bam for $base"
+samtools sort -@ "$NCPUS" "$DATAOUTPUT/${base}.filtered.bam" -o "$DATAOUTPUT/${base}.sorted.bam"
+samtools index "$DATAOUTPUT/${base}.sorted.bam"
+
+echo "Done: $DATAOUTPUT/${base}.sorted.bam"
+

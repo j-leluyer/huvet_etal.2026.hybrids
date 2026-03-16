@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#PBS -N Filtvcf
+#PBS -o 98-logfiles/AFfiltVCF.err
+#PBS -l walltime=10:00:00
+#PBS -l mem=32g
+#PBS -l ncpus=8
+#PBS -r n
+#PBS -q omp
+
+set -euo pipefail
+
+cd $PBS_O_WORKDIR
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+OUTDIR="/home1/scratch/jleluyer/hybrids/5-snps"
+OUTPREFIX="pb"
+
+JOINT_VCF="${OUTDIR}/combined.raw.vcf.gz"
+SNP_VCF="${OUTDIR}/${OUTPREFIX}.snps.bi.vcf.gz"
+SNP_GT_CLEAN="${OUTDIR}/${OUTPREFIX}.snps.bi.gtclean.vcf.gz"
+FILLED="${OUTDIR}/${OUTPREFIX}.snps.bi.gtclean.filled.vcf.gz"
+
+MARKER_VCF="${OUTDIR}/${OUTPREFIX}.AF_markers.vcf.gz"
+MARKER_AB_VCF="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.vcf.gz"
+MARKER_VCF_ACGT="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.vcf.gz"
+
+REF="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+
+THREADS=8
+JAVA_MEM="32g"
+
+# ---- site-level thresholds ----
+MIN_QUAL=20          # site QUAL
+MIN_INFO_DP=12       # site INFO/DP (cohort depth)
+MAX_MISSING=0.20     # allow up to 20% missing genotypes across samples
+
+# ---- genotype-level thresholds (Option C) ----
+# Apply AB filter ONLY if genotype DP >= MIN_AB_DP, and only for heterozygotes
+MIN_DP=12            # set GT to missing if DP < MIN_DP
+MIN_GQ=20            # set GT to missing if GQ < MIN_GQ
+MIN_AB_DP=20         # only apply AB filter when DP >= 20
+AB_LO=0.20
+AB_HI=0.80
+
+
+. /appli/anaconda/latest/etc/profile.d/conda.sh
+conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2
+
+echo "==> 2) Keep biallelic SNPs only"
+bcftools view -v snps -m2 -M2 -Oz -o "${SNP_VCF}" "${JOINT_VCF}"
+bcftools index -t "${SNP_VCF}"
+
+echo "==> 3) Set low-quality genotypes to missing (DP/GQ filters)"
+bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_GT_CLEAN}" -- \
+  -t q -n . -i "FMT/DP<${MIN_DP} || FMT/GQ<${MIN_GQ}"
+bcftools index -t "${SNP_GT_CLEAN}"
+# -----------------------------
+# 5) Fill tags (ensure F_MISSING exists and is consistent)
+# -----------------------------
+echo "==> 5) Fill tags: AC,AN,AF,MAF,F_MISSING"
+bcftools +fill-tags --threads ${THREADS} "${SNP_GT_CLEAN}" \
+  -Oz -o "${FILLED}" -- -t AC,AN,AF,MAF,F_MISSING
+bcftools index -t --threads ${THREADS} "${FILLED}"
+
+# -----------------------------
+# 6) Site-level QC (broad marker set)
+# -----------------------------
+echo "==> 6) Site-level QC (QUAL/INFO-DP/F_MISSING/AC)"
+bcftools view --threads ${THREADS} \
+  -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP} && F_MISSING<=${MAX_MISSING} && AC>=2 && AC<=AN-2" \
+  -Oz -o "${MARKER_VCF}" "${FILLED}"
+bcftools index -t --threads ${THREADS} "${MARKER_VCF}"
+echo "Sites after site-QC: $(bcftools view -H ${MARKER_VCF} | wc -l)"
+
+# -----------------------------
+# 7) Option C AB masking (parents): mask genotypes if
+#    - DP < MIN_DP, OR
+#    - heterozygous AND DP >= MIN_AB_DP AND AB outside [0.25,0.75]
+#
+# IMPORTANT:
+# - Use GT=... (not FMT/GT)
+# - Include phased hets
+# - Assume biallelic SNPs (m2/M2 + N_ALT=1)
+# -----------------------------
+echo "==> 7) AB masking Option C (apply only if DP>=${MIN_AB_DP}, AB in [${AB_LO},${AB_HI}])"
+
+MASK_EXPR='FMT/DP<'${MIN_DP}' || (
+  (GT="0/1" || GT="1/0" || GT="0|1" || GT="1|0") &&
+  FMT/DP>='${MIN_AB_DP}' &&
+  N_ALT=1 &&
+  (FMT/AD[:0]+FMT/AD[:1])>0 &&
+  (
+    (FMT/AD[:1]/(FMT/AD[:0]+FMT/AD[:1]))<'${AB_LO}' ||
+    (FMT/AD[:1]/(FMT/AD[:0]+FMT/AD[:1]))>'${AB_HI}'
+  )
+)'
+
+# Pipeline:
+#  1) force biallelic SNPs and re-apply basic site constraints (cheap safety)
+#  2) mask genotypes per MASK_EXPR
+#  3) re-fill AC/AN/AF/F_MISSING after masking
+#  4) re-apply site missingness + AC constraints
+bcftools view --threads ${THREADS} -m2 -M2 -v snps -Ou \
+  -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP}" \
+  "${MARKER_VCF}" \
+| bcftools +setGT --threads ${THREADS} -Ou -- \
+    -t q -n . \
+    -i "${MASK_EXPR}" \
+| bcftools +fill-tags --threads ${THREADS} -Ou -- -t AC,AN,AF,F_MISSING \
+| bcftools view --threads ${THREADS} -Oz -o "${MARKER_AB_VCF}" \
+    -i "F_MISSING<=${MAX_MISSING} && AC>=2 && AC<=AN-2"
+
+bcftools index -t --threads ${THREADS} "${MARKER_AB_VCF}"
+echo "Sites after AB masking + site re-filter: $(bcftools view -H ${MARKER_AB_VCF} | wc -l)"
+
+# -----------------------------
+# 8) Keep only simple A/C/G/T alleles (WASP-friendly)
+# -----------------------------
+echo "==> 8) Keep only simple A/C/G/T SNP alleles"
+bcftools view --threads ${THREADS} \
+  -i 'REF~"^[ACGT]$" && ALT~"^[ACGT]$"' \
+  -Oz -o "${MARKER_VCF_ACGT}" "${MARKER_AB_VCF}"
+bcftools index -t --threads ${THREADS} "${MARKER_VCF_ACGT}"
+
+echo "Final WASP SNP set (AB-masked, ACGT): $(bcftools view -H ${MARKER_VCF_ACGT} | wc -l)"
+echo "Output: ${MARKER_VCF_ACGT}"
+
+echo "==> 9) Build STAR/WASP sites-only VCF"
+STAR_ONLY_VCF="${OUTDIR}/${OUTPREFIX}.star_only.vcf.gz"
+bcftools annotate -x FORMAT -Oz -o "${STAR_ONLY_VCF}" "${MARKER_VCF_ACGT}"
+bcftools index -t "${STAR_ONLY_VCF}"
+echo "Output: ${STAR_ONLY_VCF}"
