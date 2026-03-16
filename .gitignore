@@ -6,8 +6,12 @@
 .RData
 .Rproj.user/
 
-# Large generated analysis outputs
-output/
+# Large generated analysis outputs (keep ignored by default)
+output/*
+
+# Keep Figure 1 artifacts tracked
+!output/fig1_combined_pca.png
+!output/fig1_combined_pca.pdf
 
 # Temporary files
 *.tmp
