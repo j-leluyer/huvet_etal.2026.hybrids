@@ -675,7 +675,11 @@ library(ggplot2)
 library(tibble)
 
 # 1. Remove unwanted traits
-traitMat_filt <- traitMat[, !colnames(traitMat) %in% c("lustre", "quality", "verif"), drop = FALSE]
+traitMat_filt <- traitMat[
+  ,
+  !colnames(traitMat) %in% c("lustre", "quality", "verif", "AA", "GG", "matA", "matG"),
+  drop = FALSE
+]
 
 # Keep only shared samples, and force identical order
 common_samples <- intersect(rownames(MEs_all), rownames(traitMat_filt))

@@ -33,7 +33,9 @@ load("output/networkConstruction_hybrids_sft10.Rda")
 
 MEs <- orderMEs(MEs)
 
-moduleTraitCor <- cor(MEs, datTraits, method = "spearman", use = "pairwise.complete.obs")
+datTraits_plot <- datTraits[, !colnames(datTraits) %in% c("AA", "GG", "matA", "matG"), drop = FALSE]
+
+moduleTraitCor <- cor(MEs, datTraits_plot, method = "spearman", use = "pairwise.complete.obs")
 moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nSamples = nrow(datExpr))
 moduleTraitAdjPvalue <- matrix(
   p.adjust(as.vector(moduleTraitPvalue), method = "fdr"),
@@ -59,7 +61,7 @@ heatmap_df <- cor_long %>%
   )
 
 heatmap_df$module <- factor(heatmap_df$module, levels = rev(colnames(MEs)))
-heatmap_df$trait <- factor(heatmap_df$trait, levels = colnames(datTraits))
+heatmap_df$trait <- factor(heatmap_df$trait, levels = colnames(datTraits_plot))
 heatmap_df$module <- gsub("^ME", "", heatmap_df$module)
 
 p_heatmap <- ggplot(heatmap_df, aes(x = trait, y = module, fill = correlation)) +
