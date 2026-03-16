@@ -34,6 +34,22 @@ Generate Figure 1 only (combined PCA):
 Rscript script/make_fig1_combined_pca.R
 ```
 
+Explore module preservation (WGCNA, L → C framework):
+
+```bash
+Rscript script/explore_module_preservation.R
+```
+
+This script writes summary tables and preservation plots to `output/`.
+
+Compute dominance effects (nuclear + mitochondrial):
+
+```bash
+Rscript script/compute_dominance_effects.R
+```
+
+This script writes class summaries, gene-level tables, asymmetry summaries, and dominance plots to `output/`.
+
 ## Notes
 
 - The pipeline now auto-detects its project root and avoids hardcoded absolute paths.

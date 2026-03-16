@@ -17,6 +17,10 @@ output/*
 !output/fig2_heatmap_red_gs_kme.png
 !output/fig2_heatmap_red_gs_kme.pdf
 
+# Keep Figure 3 artifacts tracked
+!output/fig3_dominance_supporting.png
+!output/fig3_dominance_supporting.pdf
+
 # Temporary files
 *.tmp
 *.log
