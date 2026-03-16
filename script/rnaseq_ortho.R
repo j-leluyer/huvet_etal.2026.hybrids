@@ -852,41 +852,46 @@ GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSam
 names(geneTraitSignificance) = paste("GS.", names(cross), sep="");
 names(GSPvalue) = paste("p.GS.", names(cross), sep="");
 
-## Figure 2: module-trait heatmap + red module GS vs kME ----
-module <- "red"
-column <- match(module, modNames)
-moduleGenes <- moduleColors == module
+## Figure 2: module-trait heatmap + AG vs GA volcano ----
+dds_ag_ga <- dds[, dds$Cross %in% c("AG", "GA")]
+dds_ag_ga$Cross <- droplevels(dds_ag_ga$Cross)
+design(dds_ag_ga) <- ~ Cross
+dds_ag_ga <- DESeq(dds_ag_ga)
 
-df_module_red <- data.frame(
-  kME = abs(geneModuleMembership[moduleGenes, column]),
-  GS = abs(geneTraitSignificance[moduleGenes, 1])
-)
+res_ag_vs_ga <- results(dds_ag_ga, contrast = c("Cross", "AG", "GA"))
+res_df <- as.data.frame(res_ag_vs_ga)
+res_df$gene <- rownames(res_df)
+res_df <- res_df[!is.na(res_df$padj) & !is.na(res_df$log2FoldChange), , drop = FALSE]
 
-ct_red <- cor.test(df_module_red$kME, df_module_red$GS, method = "pearson")
+volcano_sig <- subset(res_df, abs(log2FoldChange) > 2 & padj < 0.05)
 
-p_module_red <- ggplot(df_module_red, aes(x = kME, y = GS)) +
-  geom_point(color = module, alpha = 0.7, size = 1.5) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.7) +
-  labs(
-    x = paste("Module Membership in", module, "module"),
-    y = "Gene significance for cross",
-    title = "Red module: GS vs kME"
-  ) +
-  annotate(
-    "text",
-    x = 0.05,
-    y = 0.95,
-    hjust = 0,
-    vjust = 1,
-    label = paste0(
-      "r = ", sprintf("%.2f", unname(ct_red$estimate)),
-      "\np = ", format.pval(ct_red$p.value, digits = 2, eps = 1e-4)
-    ),
-    size = 4
-  ) +
-  theme_classic()
+if (nrow(volcano_sig) > 0) {
+  volcano_sig$direction <- ifelse(volcano_sig$log2FoldChange > 0, "AG up", "GA up")
 
-figure2 <- (p_heatmap | p_module_red) +
+  p_volcano <- ggplot(volcano_sig, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
+    geom_point(alpha = 0.8, size = 1.8) +
+    scale_color_manual(values = c("AG up" = "#B40426", "GA up" = "#3B4CC0")) +
+    labs(
+      x = "log2FC (AG vs GA)",
+      y = "-log10(FDR)",
+      title = "DE AG vs GA (|log2FC| > 2, FDR < 0.05)",
+      color = NULL
+    ) +
+    theme_classic()
+} else {
+  p_volcano <- ggplot() +
+    annotate("text", x = 0, y = 0, label = "No genes pass\n|log2FC| > 2 and FDR < 0.05", size = 5) +
+    xlim(-1, 1) +
+    ylim(-1, 1) +
+    labs(
+      x = "log2FC (AG vs GA)",
+      y = "-log10(FDR)",
+      title = "DE AG vs GA (filtered volcano)"
+    ) +
+    theme_classic()
+}
+
+figure2 <- (p_heatmap | p_volcano) +
   patchwork::plot_layout(widths = c(1.8, 1)) +
   patchwork::plot_annotation(tag_levels = "A")
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 
 suppressPackageStartupMessages({
+  library(DESeq2)
   library(WGCNA)
   library(ggplot2)
   library(dplyr)
@@ -30,6 +31,7 @@ dir.create("output", showWarnings = FALSE, recursive = TRUE)
 
 load("output/dataInput_hybrids_ortho.Rda")
 load("output/networkConstruction_hybrids_sft10.Rda")
+load("output/step1.hybrids.ortho.Rda")
 
 MEs <- orderMEs(MEs)
 
@@ -114,51 +116,45 @@ p_heatmap <- ggplot(heatmap_df, aes(x = trait, y = module, fill = correlation)) 
     panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8)
   )
 
-cross <- as.data.frame(datTraits$Cross)
-names(cross) <- "cross"
+dds_ag_ga <- dds[, dds$Cross %in% c("AG", "GA")]
+dds_ag_ga$Cross <- droplevels(dds_ag_ga$Cross)
+design(dds_ag_ga) <- ~ Cross
+dds_ag_ga <- DESeq(dds_ag_ga)
 
-modNames <- substring(names(MEs), 3)
-geneModuleMembership <- as.data.frame(cor(datExpr, MEs, use = "p"))
-geneTraitSignificance <- as.data.frame(cor(datExpr, cross, use = "p"))
+res_ag_vs_ga <- results(dds_ag_ga, contrast = c("Cross", "AG", "GA"))
+res_df <- as.data.frame(res_ag_vs_ga)
+res_df$gene <- rownames(res_df)
+res_df <- res_df[!is.na(res_df$padj) & !is.na(res_df$log2FoldChange), , drop = FALSE]
 
-module <- "red"
-column <- match(module, modNames)
-moduleGenes <- moduleColors == module
+volcano_sig <- subset(res_df, abs(log2FoldChange) > 2 & padj < 0.05)
 
-if (is.na(column) || sum(moduleGenes) == 0) {
-  stop("Module 'red' was not found in current network results.")
+if (nrow(volcano_sig) > 0) {
+  volcano_sig$direction <- ifelse(volcano_sig$log2FoldChange > 0, "AG up", "GA up")
+
+  p_volcano <- ggplot(volcano_sig, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
+    geom_point(alpha = 0.8, size = 1.8) +
+    scale_color_manual(values = c("AG up" = "#B40426", "GA up" = "#3B4CC0")) +
+    labs(
+      x = "log2FC (AG vs GA)",
+      y = "-log10(FDR)",
+      title = "DE AG vs GA (|log2FC| > 2, FDR < 0.05)",
+      color = NULL
+    ) +
+    theme_classic()
+} else {
+  p_volcano <- ggplot() +
+    annotate("text", x = 0, y = 0, label = "No genes pass\n|log2FC| > 2 and FDR < 0.05", size = 5) +
+    xlim(-1, 1) +
+    ylim(-1, 1) +
+    labs(
+      x = "log2FC (AG vs GA)",
+      y = "-log10(FDR)",
+      title = "DE AG vs GA (filtered volcano)"
+    ) +
+    theme_classic()
 }
 
-df_module_red <- data.frame(
-  kME = abs(geneModuleMembership[moduleGenes, column]),
-  GS = abs(geneTraitSignificance[moduleGenes, 1])
-)
-
-ct_red <- cor.test(df_module_red$kME, df_module_red$GS, method = "pearson")
-
-p_module_red <- ggplot(df_module_red, aes(x = kME, y = GS)) +
-  geom_point(color = module, alpha = 0.7, size = 1.5) +
-  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.7) +
-  labs(
-    x = paste("Module Membership in", module, "module"),
-    y = "Gene significance for cross",
-    title = "Red module: GS vs kME"
-  ) +
-  annotate(
-    "text",
-    x = 0.05,
-    y = 0.95,
-    hjust = 0,
-    vjust = 1,
-    label = paste0(
-      "r = ", sprintf("%.2f", unname(ct_red$estimate)),
-      "\np = ", format.pval(ct_red$p.value, digits = 2, eps = 1e-4)
-    ),
-    size = 4
-  ) +
-  theme_classic()
-
-figure2 <- (p_heatmap | p_module_red) +
+figure2 <- (p_heatmap | p_volcano) +
   plot_layout(widths = c(1.8, 1)) +
   plot_annotation(tag_levels = "A")
 
