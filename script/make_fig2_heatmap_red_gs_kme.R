@@ -124,35 +124,42 @@ dds_ag_ga <- DESeq(dds_ag_ga)
 res_ag_vs_ga <- results(dds_ag_ga, contrast = c("Cross", "AG", "GA"))
 res_df <- as.data.frame(res_ag_vs_ga)
 res_df$gene <- rownames(res_df)
+
+write.table(
+  res_df,
+  file = "output/Table_S1_DESeq2_AG_vs_GA.tsv",
+  sep = "\t",
+  quote = FALSE,
+  row.names = FALSE
+)
+
 res_df <- res_df[!is.na(res_df$padj) & !is.na(res_df$log2FoldChange), , drop = FALSE]
 
-volcano_sig <- subset(res_df, abs(log2FoldChange) > 2 & padj < 0.05)
+volc_all <- res_df
+volc_all$contrast <- "AG vs GA"
+volc_all$signif <- "NS"
+volc_all$signif[volc_all$log2FoldChange >= 2 & volc_all$padj < 0.01] <- "Up"
+volc_all$signif[volc_all$log2FoldChange <= -2 & volc_all$padj < 0.01] <- "Down"
+volc_all$signif <- factor(volc_all$signif, levels = c("Up", "Down", "NS"))
 
-if (nrow(volcano_sig) > 0) {
-  volcano_sig$direction <- ifelse(volcano_sig$log2FoldChange > 0, "AG up", "GA up")
+vol_cols <- c(
+  "Up" = "#B22222",
+  "Down" = "#1B4F9C",
+  "NS" = "grey80"
+)
 
-  p_volcano <- ggplot(volcano_sig, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
-    geom_point(alpha = 0.8, size = 1.8) +
-    scale_color_manual(values = c("AG up" = "#B40426", "GA up" = "#3B4CC0")) +
-    labs(
-      x = "log2FC (AG vs GA)",
-      y = "-log10(FDR)",
-      title = "DE AG vs GA (|log2FC| > 2, FDR < 0.05)",
-      color = NULL
-    ) +
-    theme_classic()
-} else {
-  p_volcano <- ggplot() +
-    annotate("text", x = 0, y = 0, label = "No genes pass\n|log2FC| > 2 and FDR < 0.05", size = 5) +
-    xlim(-1, 1) +
-    ylim(-1, 1) +
-    labs(
-      x = "log2FC (AG vs GA)",
-      y = "-log10(FDR)",
-      title = "DE AG vs GA (filtered volcano)"
-    ) +
-    theme_classic()
-}
+p_volcano <- ggplot(volc_all, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = signif), alpha = 0.6, size = 1, na.rm = TRUE) +
+  scale_color_manual(values = vol_cols, drop = FALSE) +
+  facet_wrap(~contrast, ncol = 1) +
+  theme_bw() +
+  labs(
+    x = "log2 Fold Change",
+    y = "-log10 adjusted p-value",
+    color = "Significance"
+  ) +
+  geom_vline(xintercept = c(-2, 2), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.01), linetype = "dashed")
 
 figure2 <- (p_heatmap | p_volcano) +
   plot_layout(widths = c(1.8, 1)) +
