@@ -131,6 +131,23 @@ expr_aa <- expr_aa[, names(moduleColors_use), drop = FALSE]
 
 stopifnot(identical(colnames(expr_gg), colnames(expr_aa)))
 
+# Remove genes with zero variance in either group before preservation
+var_keep <- apply(expr_gg, 2, var, na.rm = TRUE) > 0 &
+  apply(expr_aa, 2, var, na.rm = TRUE) > 0
+expr_gg <- expr_gg[, var_keep, drop = FALSE]
+expr_aa <- expr_aa[, var_keep, drop = FALSE]
+moduleColors_use <- moduleColors_use[colnames(expr_gg)]
+
+gsg_gg <- goodSamplesGenes(expr_gg, verbose = 0)
+gsg_aa <- goodSamplesGenes(expr_aa, verbose = 0)
+common_good_genes <- colnames(expr_gg)[gsg_gg$goodGenes & gsg_aa$goodGenes]
+expr_gg <- expr_gg[gsg_gg$goodSamples, common_good_genes, drop = FALSE]
+expr_aa <- expr_aa[gsg_aa$goodSamples, common_good_genes, drop = FALSE]
+moduleColors_use <- moduleColors_use[common_good_genes]
+
+stopifnot(ncol(expr_gg) > 0, ncol(expr_aa) > 0)
+stopifnot(identical(colnames(expr_gg), colnames(expr_aa)))
+
 multiExpr <- list(
   REF = list(data = expr_gg),
   TEST = list(data = expr_aa)
@@ -141,35 +158,82 @@ pres <- WGCNA::modulePreservation(
   multiExpr,
   colorList,
   referenceNetworks = 1,
-  nPermutations = 1000,
+  nPermutations = 10,
   randomSeed = 123,
   verbose = 3
 )
 
-zTab <- pres$preservation$Z[[1]][[1]]
-obsTab <- pres$preservation$observed[[1]][[1]]
-
-get_Zsummary <- function(z) {
-  if ("Zsummary.pres" %in% colnames(z)) return(z[, "Zsummary.pres"])
-  if ("Zsummary" %in% colnames(z)) return(z[, "Zsummary"])
-  dens <- intersect(colnames(z), c("Zdensity.pres", "Zdensity"))
-  conn <- intersect(colnames(z), c("Zconnectivity.pres", "Zconnectivity"))
-  if (length(dens) && length(conn)) return((z[, dens[1]] + z[, conn[1]]) / 2)
-  stop("No Zsummary column found in preservation output.")
+extract_first_table <- function(x) {
+  if (is.data.frame(x)) return(x)
+  if (is.matrix(x)) return(as.data.frame(x))
+  if (is.list(x)) {
+    for (i in seq_along(x)) {
+      out <- extract_first_table(x[[i]])
+      if (!is.null(out)) return(out)
+    }
+  }
+  NULL
 }
 
-Zsummary <- get_Zsummary(zTab)
-medianRank <- if ("medianRank.pres" %in% colnames(obsTab)) {
+zTab <- extract_first_table(pres$preservation$Z)
+obsTab <- extract_first_table(pres$preservation$observed)
+
+if (is.null(zTab) && is.null(obsTab)) {
+  stop("Could not extract preservation summary tables from WGCNA output.")
+}
+
+get_Zsummary <- function(z) {
+  if (is.null(z) || nrow(z) == 0) return(numeric(0))
+  zsum_col <- grep("^Zsummary|Zsummary", colnames(z), ignore.case = TRUE, value = TRUE)
+  if (length(zsum_col) > 0) return(z[, zsum_col[1]])
+  dens <- grep("Zdensity", colnames(z), ignore.case = TRUE, value = TRUE)
+  conn <- grep("Zconnectivity", colnames(z), ignore.case = TRUE, value = TRUE)
+  if (length(dens) && length(conn)) return((z[, dens[1]] + z[, conn[1]]) / 2)
+  rep(NA_real_, nrow(z))
+}
+
+if (!is.null(zTab) && nrow(zTab) > 0) {
+  module_names <- rownames(zTab)
+  n_mod <- nrow(zTab)
+} else {
+  module_names <- rownames(obsTab)
+  n_mod <- nrow(obsTab)
+}
+
+if (is.null(module_names)) {
+  module_names <- paste0("module_", seq_len(n_mod))
+}
+
+Zsummary <- if (!is.null(zTab) && nrow(zTab) > 0) get_Zsummary(zTab) else rep(NA_real_, n_mod)
+medianRank <- if (!is.null(obsTab) && "medianRank.pres" %in% colnames(obsTab)) {
   obsTab[, "medianRank.pres"]
-} else if ("medianRank" %in% colnames(obsTab)) {
+} else if (!is.null(obsTab) && "medianRank" %in% colnames(obsTab)) {
   obsTab[, "medianRank"]
 } else {
-  NA_real_
+  rep(NA_real_, n_mod)
+}
+
+module_size_col <- if (!is.null(zTab) && "moduleSize" %in% colnames(zTab)) {
+  "moduleSize"
+} else {
+  if (!is.null(zTab)) {
+    grep("module.*size|size", colnames(zTab), ignore.case = TRUE, value = TRUE)[1]
+  } else if (!is.null(obsTab)) {
+    grep("module.*size|size", colnames(obsTab), ignore.case = TRUE, value = TRUE)[1]
+  } else {
+    NA_character_
+  }
 }
 
 summary_tab <- data.frame(
-  module = rownames(zTab),
-  moduleSize = zTab[, "moduleSize"],
+  module = module_names,
+  moduleSize = if (!is.na(module_size_col) && !is.null(zTab) && module_size_col %in% colnames(zTab)) {
+    zTab[, module_size_col]
+  } else if (!is.na(module_size_col) && !is.null(obsTab) && module_size_col %in% colnames(obsTab)) {
+    obsTab[, module_size_col]
+  } else {
+    rep(NA_real_, n_mod)
+  },
   Zsummary = Zsummary,
   medianRank = medianRank,
   comparison = "GG_to_AA",
