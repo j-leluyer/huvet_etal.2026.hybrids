@@ -315,6 +315,8 @@ if (length(sig_cols) >= 2) {
     rename_with(~ gsub("_significant$", "", .x), all_of(sig_cols))
 
   intersect_cols <- setdiff(names(upset_data), "name")
+  upset_data <- upset_data %>%
+    filter(if_any(all_of(intersect_cols), ~ .x))
 
   p_upset <- ComplexUpset::upset(
     upset_data,
