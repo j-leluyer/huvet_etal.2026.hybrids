@@ -14,8 +14,8 @@ if (!requireNamespace("writexl", quietly = TRUE)) {
   install.packages("writexl", repos = "https://cloud.r-project.org")
 }
 
-if (!requireNamespace("UpSetR", quietly = TRUE)) {
-  install.packages("UpSetR", repos = "https://cloud.r-project.org")
+if (!requireNamespace("ComplexUpset", quietly = TRUE)) {
+  install.packages("ComplexUpset", repos = "https://cloud.r-project.org")
 }
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -290,40 +290,40 @@ for (spec in pairwise_specs) {
 }
 writexl::write_xlsx(table_s1_sheets, path = "output/Table_S1.DESeq2.xlsx")
 
-# FigS2: UpSet plot of significant DE genes across all pairwise comparisons
-sig_gene_sets <- lapply(table_s1_sheets, function(df) {
-  unique(df$gene[!is.na(df$padj) & df$padj < 0.05])
-})
-sig_gene_sets <- sig_gene_sets[vapply(sig_gene_sets, length, integer(1)) > 0]
+# FigS2: DEP-like UpSet plot from binary significance columns
+all_genes <- sort(unique(unlist(lapply(table_s1_sheets, function(df) as.character(df$gene)))))
+data_results <- tibble(name = all_genes)
 
-if (length(sig_gene_sets) >= 2) {
-  upset_input <- UpSetR::fromList(sig_gene_sets)
+for (comp in names(table_s1_sheets)) {
+  sig_genes <- unique(as.character(table_s1_sheets[[comp]]$gene[
+    !is.na(table_s1_sheets[[comp]]$padj) & table_s1_sheets[[comp]]$padj < 0.05
+  ]))
+  data_results[[paste0(comp, "_significant")]] <- data_results$name %in% sig_genes
+}
 
-  png("output/figS2_upset_pairwise_DE.png", width = 2400, height = 1600, res = 300)
-  UpSetR::upset(
-    upset_input,
-    nsets = length(sig_gene_sets),
-    nintersects = 30,
-    order.by = "freq",
-    mb.ratio = c(0.65, 0.35),
-    main.bar.color = "grey25",
-    sets.bar.color = "grey55",
-    text.scale = 1.2
-  )
-  dev.off()
+sig_cols <- grep("_significant$", names(data_results), value = TRUE)
 
-  pdf("output/figS2_upset_pairwise_DE.pdf", width = 12, height = 8)
-  UpSetR::upset(
-    upset_input,
-    nsets = length(sig_gene_sets),
-    nintersects = 30,
-    order.by = "freq",
-    mb.ratio = c(0.65, 0.35),
-    main.bar.color = "grey25",
-    sets.bar.color = "grey55",
-    text.scale = 1.2
-  )
-  dev.off()
+if (length(sig_cols) >= 2) {
+  upset_data <- data_results %>%
+    select(name, all_of(sig_cols)) %>%
+    rename_with(~ gsub("_significant$", "", .x), all_of(sig_cols))
+
+  intersect_cols <- setdiff(names(upset_data), "name")
+
+  p_upset <- ComplexUpset::upset(
+    upset_data,
+    intersect = intersect_cols,
+    min_size = 1,
+    width_ratio = 0.2,
+    base_annotations = list(
+      "Intersection size" = ComplexUpset::intersection_size(text = list(size = 3.2))
+    ),
+    set_sizes = ComplexUpset::upset_set_size()
+  ) +
+    ggtitle("FigS2. Overlap of significant DE genes across pairwise comparisons")
+
+  ggsave("output/figS2_upset_pairwise_DE.png", p_upset, width = 12, height = 8, dpi = 300)
+  ggsave("output/figS2_upset_pairwise_DE.pdf", p_upset, width = 12, height = 8)
 } else {
   warning("Not enough non-empty DE gene sets to build UpSet plot (need at least 2).")
 }
