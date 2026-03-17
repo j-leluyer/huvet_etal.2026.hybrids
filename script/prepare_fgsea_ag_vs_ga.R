@@ -294,9 +294,15 @@ writexl::write_xlsx(table_s1_sheets, path = "output/Table_S1.DESeq2.xlsx")
 all_genes <- sort(unique(unlist(lapply(table_s1_sheets, function(df) as.character(df$gene)))))
 data_results <- tibble(name = all_genes)
 
+sig_padj_threshold <- 0.01
+sig_lfc_threshold <- 2
+
 for (comp in names(table_s1_sheets)) {
   sig_genes <- unique(as.character(table_s1_sheets[[comp]]$gene[
-    !is.na(table_s1_sheets[[comp]]$padj) & table_s1_sheets[[comp]]$padj < 0.05
+    !is.na(table_s1_sheets[[comp]]$padj) &
+      !is.na(table_s1_sheets[[comp]]$log2FoldChange) &
+      table_s1_sheets[[comp]]$padj < sig_padj_threshold &
+      table_s1_sheets[[comp]]$log2FoldChange > sig_lfc_threshold
   ]))
   data_results[[paste0(comp, "_significant")]] <- data_results$name %in% sig_genes
 }
