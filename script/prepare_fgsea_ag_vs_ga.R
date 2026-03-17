@@ -18,10 +18,6 @@ if (!requireNamespace("ComplexUpset", quietly = TRUE)) {
   install.packages("ComplexUpset", repos = "https://cloud.r-project.org")
 }
 
-if (!requireNamespace("ggVennDiagram", quietly = TRUE)) {
-  install.packages("ggVennDiagram", repos = "https://cloud.r-project.org")
-}
-
 args <- commandArgs(trailingOnly = TRUE)
 script_args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", script_args[grep("--file=", script_args)])
@@ -343,7 +339,7 @@ if (length(sig_cols) >= 2) {
   warning("Not enough non-empty DE gene sets to build UpSet plot (need at least 2).")
 }
 
-# FigS3: Venn diagram between AG_vs_GA DEGs and AG dominance classes
+# FigS3: UpSet plot between AG_vs_GA DEGs and AG dominance classes
 dom_file <- file.path("output", "epst_with_deseq_dominance.tsv")
 if (file.exists(dom_file) && "AG_vs_GA" %in% names(table_s1_sheets)) {
   dom_tbl <- fread(dom_file)
@@ -358,32 +354,59 @@ if (file.exists(dom_file) && "AG_vs_GA" %in% names(table_s1_sheets)) {
     pull(gene) %>%
     unique()
 
-  class_sets <- lapply(
-    c("Underdominant", "Overdominant", "Additive", "GG_dominant"),
-    function(cls) unique(dom_tbl$gene[dom_tbl$class_AG == cls])
+  class_labels <- c("Additive", "GG_dominant", "Overdominant", "Underdominant")
+  class_cols <- c(
+    "AG_vs_GA_DEG" = "black",
+    "Additive" = "#377EB8",
+    "GG_dominant" = "#984EA3",
+    "Overdominant" = "#E41A1C",
+    "Underdominant" = "#FF7F00"
   )
-  names(class_sets) <- c("Underdominant", "Overdominant", "Additive", "GG_dominant")
 
-  venn_sets <- c(list("AG_vs_GA_DEG" = deg_ag_ga), class_sets)
-  venn_sets <- venn_sets[vapply(venn_sets, length, integer(1)) > 0]
+  all_genes_s3 <- sort(unique(c(
+    deg_ag_ga,
+    unlist(lapply(class_labels, function(cls) dom_tbl$gene[dom_tbl$class_AG == cls]))
+  )))
 
-  if (length(venn_sets) >= 2) {
-    p_venn <- ggVennDiagram::ggVennDiagram(
-      venn_sets,
-      label_alpha = 0,
-      edge_size = 0.5
+  upset_s3 <- tibble(name = all_genes_s3) %>%
+    mutate(
+      AG_vs_GA_DEG = name %in% deg_ag_ga,
+      Additive = name %in% unique(dom_tbl$gene[dom_tbl$class_AG == "Additive"]),
+      GG_dominant = name %in% unique(dom_tbl$gene[dom_tbl$class_AG == "GG_dominant"]),
+      Overdominant = name %in% unique(dom_tbl$gene[dom_tbl$class_AG == "Overdominant"]),
+      Underdominant = name %in% unique(dom_tbl$gene[dom_tbl$class_AG == "Underdominant"])
+    ) %>%
+    filter(if_any(c(AG_vs_GA_DEG, Additive, GG_dominant, Overdominant, Underdominant), ~ .x))
+
+  if (nrow(upset_s3) > 0) {
+    p_s3 <- ComplexUpset::upset(
+      upset_s3,
+      intersect = c("AG_vs_GA_DEG", "Additive", "GG_dominant", "Overdominant", "Underdominant"),
+      min_size = 1,
+      width_ratio = 0.2,
+      sort_intersections_by = "cardinality",
+      stripes = c("white", "grey98"),
+      queries = list(
+        ComplexUpset::upset_query(set = "AG_vs_GA_DEG", color = class_cols[["AG_vs_GA_DEG"]], fill = class_cols[["AG_vs_GA_DEG"]]),
+        ComplexUpset::upset_query(set = "Additive", color = class_cols[["Additive"]], fill = class_cols[["Additive"]]),
+        ComplexUpset::upset_query(set = "GG_dominant", color = class_cols[["GG_dominant"]], fill = class_cols[["GG_dominant"]]),
+        ComplexUpset::upset_query(set = "Overdominant", color = class_cols[["Overdominant"]], fill = class_cols[["Overdominant"]]),
+        ComplexUpset::upset_query(set = "Underdominant", color = class_cols[["Underdominant"]], fill = class_cols[["Underdominant"]])
+      ),
+      base_annotations = list(
+        "Intersection size" = ComplexUpset::intersection_size(text = list(size = 3.2))
+      ),
+      set_sizes = ComplexUpset::upset_set_size()
     ) +
-      scale_fill_gradient(low = "white", high = "#2166ac") +
-      ggtitle("FigS3. Overlap between AG_vs_GA DEGs and AG dominance classes") +
-      theme(legend.position = "right")
+      ggtitle("FigS3. Overlap of AG_vs_GA DEGs with AG dominance classes")
 
-    ggsave("output/figS3_venn_AGvsGA_DEG_dominance.png", p_venn, width = 8.5, height = 7, dpi = 300)
-    ggsave("output/figS3_venn_AGvsGA_DEG_dominance.pdf", p_venn, width = 8.5, height = 7)
+    ggsave("output/figS3_upset_AGvsGA_DEG_dominance.png", p_s3, width = 11, height = 7, dpi = 300)
+    ggsave("output/figS3_upset_AGvsGA_DEG_dominance.pdf", p_s3, width = 11, height = 7)
   } else {
-    warning("Not enough non-empty sets to build FigS3 Venn diagram (need at least 2).")
+    warning("Not enough genes to build FigS3 UpSet plot.")
   }
 } else {
-  warning("Cannot build FigS3 Venn diagram: missing output/epst_with_deseq_dominance.tsv or AG_vs_GA sheet.")
+  warning("Cannot build FigS3 UpSet plot: missing output/epst_with_deseq_dominance.tsv or AG_vs_GA sheet.")
 }
 
 # Keep FGSEA focused on the manuscript contrasts
@@ -408,7 +431,7 @@ writexl::write_xlsx(workbook_sheets, path = "output/Table_S3.gsea.xlsx")
 message("Created:")
 message(" - output/Table_S1.DESeq2.xlsx")
 message(" - output/figS2_upset_pairwise_DE.png/.pdf")
-message(" - output/figS3_venn_AGvsGA_DEG_dominance.png/.pdf")
+message(" - output/figS3_upset_AGvsGA_DEG_dominance.png/.pdf")
 message(" - output/fgsea_term2gene_from_go.tsv")
 for (res in results) {
   message(" - output/fgsea_ranks_", res$label, "_log2FC.tsv")
