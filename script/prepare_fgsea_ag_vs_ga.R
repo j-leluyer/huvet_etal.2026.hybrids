@@ -118,6 +118,9 @@ get_contrast_table <- function(label, numerator, denominator) {
     left_join(
       ortho %>% select(ORTHO_ID, `gene-AA` = CA_gene, `gene-GG` = CG_gene),
       by = c("gene" = "ORTHO_ID")
+    ) %>%
+    mutate(
+      abs_log2FoldChange = abs(log2FoldChange)
     )
 
   res_df
