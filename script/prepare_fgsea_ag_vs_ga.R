@@ -14,6 +14,10 @@ if (!requireNamespace("writexl", quietly = TRUE)) {
   install.packages("writexl", repos = "https://cloud.r-project.org")
 }
 
+if (!requireNamespace("UpSetR", quietly = TRUE)) {
+  install.packages("UpSetR", repos = "https://cloud.r-project.org")
+}
+
 args <- commandArgs(trailingOnly = TRUE)
 script_args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", script_args[grep("--file=", script_args)])
@@ -268,6 +272,63 @@ run_fgsea_for_comparison <- function(label, numerator, denominator) {
   )
 }
 
+# Full-factorial pairwise DE comparisons across Cross levels
+pairwise_levels <- c("AA", "AG", "GA", "GG")
+pairwise_comparisons <- combn(pairwise_levels, 2, simplify = FALSE)
+
+pairwise_specs <- lapply(pairwise_comparisons, function(p) {
+  list(
+    label = paste0(p[1], "_vs_", p[2]),
+    numerator = p[1],
+    denominator = p[2]
+  )
+})
+
+table_s1_sheets <- list()
+for (spec in pairwise_specs) {
+  table_s1_sheets[[spec$label]] <- get_contrast_table(spec$label, spec$numerator, spec$denominator)
+}
+writexl::write_xlsx(table_s1_sheets, path = "output/Table_S1.DESeq2.xlsx")
+
+# FigS2: UpSet plot of significant DE genes across all pairwise comparisons
+sig_gene_sets <- lapply(table_s1_sheets, function(df) {
+  unique(df$gene[!is.na(df$padj) & df$padj < 0.05])
+})
+sig_gene_sets <- sig_gene_sets[vapply(sig_gene_sets, length, integer(1)) > 0]
+
+if (length(sig_gene_sets) >= 2) {
+  upset_input <- UpSetR::fromList(sig_gene_sets)
+
+  png("output/figS2_upset_pairwise_DE.png", width = 2400, height = 1600, res = 300)
+  UpSetR::upset(
+    upset_input,
+    nsets = length(sig_gene_sets),
+    nintersects = 30,
+    order.by = "freq",
+    mb.ratio = c(0.65, 0.35),
+    main.bar.color = "grey25",
+    sets.bar.color = "grey55",
+    text.scale = 1.2
+  )
+  dev.off()
+
+  pdf("output/figS2_upset_pairwise_DE.pdf", width = 12, height = 8)
+  UpSetR::upset(
+    upset_input,
+    nsets = length(sig_gene_sets),
+    nintersects = 30,
+    order.by = "freq",
+    mb.ratio = c(0.65, 0.35),
+    main.bar.color = "grey25",
+    sets.bar.color = "grey55",
+    text.scale = 1.2
+  )
+  dev.off()
+} else {
+  warning("Not enough non-empty DE gene sets to build UpSet plot (need at least 2).")
+}
+
+# Keep FGSEA focused on the manuscript contrasts
 comparison_specs <- list(
   list(label = "AG_vs_GA", numerator = "AG", denominator = "GA"),
   list(label = "AA_vs_GG", numerator = "AA", denominator = "GG")
@@ -276,13 +337,6 @@ comparison_specs <- list(
 results <- lapply(comparison_specs, function(spec) {
   run_fgsea_for_comparison(spec$label, spec$numerator, spec$denominator)
 })
-
-table_s1_sheets <- list()
-for (res in results) {
-  table_s1_sheets[[res$label]] <- res$deseq
-}
-
-writexl::write_xlsx(table_s1_sheets, path = "output/Table_S1.DESeq2.xlsx")
 
 workbook_sheets <- list()
 for (res in results) {
@@ -295,6 +349,7 @@ writexl::write_xlsx(workbook_sheets, path = "output/Table_S3.gsea.xlsx")
 
 message("Created:")
 message(" - output/Table_S1.DESeq2.xlsx")
+message(" - output/figS2_upset_pairwise_DE.png/.pdf")
 message(" - output/fgsea_term2gene_from_go.tsv")
 for (res in results) {
   message(" - output/fgsea_ranks_", res$label, "_log2FC.tsv")
