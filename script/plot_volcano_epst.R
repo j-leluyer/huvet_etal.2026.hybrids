@@ -45,6 +45,7 @@ dat <- dat %>%
   mutate(
     neg_log10_ePST  = -log10(ePST),
     is_outlier      = ePST > perm_thr975,
+    is_volcano_hit  = ePST > perm_thr975 & abs(log2FoldChange) >= 2,
     class_AG        = factor(class_AG,
                              levels = c("Ambiguous", "Additive",
                                         "AA_dominant", "GG_dominant",
@@ -65,26 +66,22 @@ dom_cols <- c(
 vline_lfc      <- c(-2, 2)                      # user-requested vertical lines
 hline_threshold <- -log10(perm_thr975)          # ePST permutation q97.5 in −log10 scale
 
-# Split background from coloured points for rendering speed / legibility
-dat_bg  <- filter(dat, class_AG == "Ambiguous")
-dat_col <- filter(dat, class_AG != "Ambiguous")
+# Split background from highlighted points
+dat_bg  <- dat
+dat_hit <- filter(dat, is_volcano_hit)
 
 # ── Volcano plot ─────────────────────────────────────────────────────────────
 p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
 
-  # background (ambiguous) layer
+  # background layer: all genes in black
   geom_point(data = dat_bg,
-             color = "grey82", alpha = 0.35, size = 0.6, shape = 16) +
+             color = "black", alpha = 0.20, size = 0.55, shape = 16) +
 
-  # coloured dominance-class layer
-  geom_point(data = dat_col,
-             aes(color = class_AG),
-             alpha = 0.65, size = 0.75, shape = 16) +
-
-  # highlight ePST outliers with a black ring
-  geom_point(data = filter(dat, is_outlier),
-             shape = 21, size = 1.4,
-             fill  = NA, color = "black", stroke = 0.45) +
+  # highlight only points above horizontal threshold and outside vertical lanes
+  geom_point(data = dat_hit,
+             aes(fill = class_AG),
+             shape = 21, size = 1.5,
+             color = "black", stroke = 0.35, alpha = 0.95) +
 
   # vertical lines at ±2 log2FC
   geom_vline(xintercept = vline_lfc,
@@ -94,8 +91,8 @@ p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
   geom_hline(yintercept = hline_threshold,
              linetype   = "dotted", linewidth = 0.5, color = "firebrick") +
 
-  scale_color_manual(values = dom_cols, drop = FALSE,
-                     name   = "AG dominance class") +
+  scale_fill_manual(values = dom_cols, drop = FALSE,
+                    name   = "AG dominance class") +
 
   labs(
     x     = expression(log[2]*"FC  (GG vs AA)"),
@@ -116,7 +113,7 @@ p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
     plot.subtitle     = element_text(size = 8, color = "grey40")
   ) +
 
-  guides(color = guide_legend(override.aes = list(size = 2.5, alpha = 1)))
+  guides(fill = guide_legend(override.aes = list(shape = 21, size = 3, color = "black", alpha = 1)))
 
 # ── Save ─────────────────────────────────────────────────────────────────────
 ggsave("output/figS1_volcano_epst.png", p_volcano,
