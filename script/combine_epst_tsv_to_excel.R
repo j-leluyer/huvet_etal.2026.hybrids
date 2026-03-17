@@ -1,5 +1,6 @@
 suppressPackageStartupMessages({
   library(readr)
+  library(dplyr)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -19,6 +20,25 @@ project_dir <- if (length(args) >= 1) {
 
 setwd(project_dir)
 dir.create("output", showWarnings = FALSE, recursive = TRUE)
+
+ortho_file <- "data/ortholog_1to1.with_mito.tsv"
+if (!file.exists(ortho_file)) {
+  stop("Missing ortholog mapping file: ", ortho_file)
+}
+
+ortholog_map <- readr::read_tsv(ortho_file, show_col_types = FALSE, progress = FALSE) %>%
+  dplyr::select(ORTHO_ID, `gene-AA` = CA_gene, `gene-GG` = CG_gene)
+
+append_gene_names <- function(df) {
+  key_col <- NULL
+  if ("gene" %in% names(df)) key_col <- "gene"
+  if (is.null(key_col) && "ORTHO_ID" %in% names(df)) key_col <- "ORTHO_ID"
+  if (is.null(key_col)) return(df)
+
+  df %>%
+    dplyr::select(-dplyr::any_of(c("gene-AA", "gene-GG"))) %>%
+    dplyr::left_join(ortholog_map, by = setNames("ORTHO_ID", key_col))
+}
 
 if (!requireNamespace("writexl", quietly = TRUE)) {
   install.packages("writexl", repos = "https://cloud.r-project.org")
@@ -60,7 +80,8 @@ if (any(duplicated(sheet_names))) {
 
 sheets <- list()
 for (i in seq_along(ordered)) {
-  sheets[[sheet_names[i]]] <- readr::read_tsv(ordered[i], show_col_types = FALSE, progress = FALSE)
+  raw_sheet <- readr::read_tsv(ordered[i], show_col_types = FALSE, progress = FALSE)
+  sheets[[sheet_names[i]]] <- append_gene_names(raw_sheet)
 }
 
 out_xlsx <- file.path("output", "Table_S2.ePST_summary.xlsx")

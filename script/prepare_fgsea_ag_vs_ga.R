@@ -113,6 +113,21 @@ get_contrast_table <- function(label, numerator, denominator) {
     stop(out_file, " must contain columns: gene, log2FoldChange")
   }
 
+  res_df <- res_df %>%
+    select(-any_of(c("gene-AA", "gene-GG"))) %>%
+    left_join(
+      ortho %>% select(ORTHO_ID, `gene-AA` = CA_gene, `gene-GG` = CG_gene),
+      by = c("gene" = "ORTHO_ID")
+    )
+
+  write.table(
+    res_df,
+    file = out_file,
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE
+  )
+
   res_df
 }
 
