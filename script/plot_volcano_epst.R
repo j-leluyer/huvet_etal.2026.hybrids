@@ -119,9 +119,9 @@ p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
   guides(color = guide_legend(override.aes = list(size = 2.5, alpha = 1)))
 
 # ── Save ─────────────────────────────────────────────────────────────────────
-ggsave("output/figS_volcano_epst.png", p_volcano,
+ggsave("output/figS1_volcano_epst.png", p_volcano,
        width = 7, height = 5.5, dpi = 300)
-ggsave("output/figS_volcano_epst.pdf", p_volcano,
+ggsave("output/figS1_volcano_epst.pdf", p_volcano,
        width = 7, height = 5.5)
 
-message("Saved:\n  output/figS_volcano_epst.png\n  output/figS_volcano_epst.pdf")
+message("Saved:\n  output/figS1_volcano_epst.png\n  output/figS1_volcano_epst.pdf")
