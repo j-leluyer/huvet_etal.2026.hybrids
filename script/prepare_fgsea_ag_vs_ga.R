@@ -7,6 +7,7 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(fgsea)
   library(ggplot2)
+  library(readxl)
 })
 
 if (!requireNamespace("writexl", quietly = TRUE)) {
@@ -78,10 +79,13 @@ clean_gene_id <- function(x) {
 }
 
 get_contrast_table <- function(label, numerator, denominator) {
-  out_file <- file.path("output", paste0("Table_S1_DESeq2_", label, ".tsv"))
+  out_xlsx <- file.path("output", "Table_S1.DESeq2.xlsx")
+  legacy_tsv <- file.path("output", paste0("Table_S1_DESeq2_", label, ".tsv"))
 
-  if (file.exists(out_file)) {
-    res_df <- fread(out_file)
+  if (file.exists(out_xlsx) && label %in% readxl::excel_sheets(out_xlsx)) {
+    res_df <- as.data.frame(readxl::read_excel(out_xlsx, sheet = label))
+  } else if (file.exists(legacy_tsv)) {
+    res_df <- fread(legacy_tsv)
   } else {
     if (!file.exists("output/step1.hybrids.ortho.Rda")) {
       stop("Missing output/step1.hybrids.ortho.Rda needed to compute ", label)
@@ -99,18 +103,10 @@ get_contrast_table <- function(label, numerator, denominator) {
     res_obj <- results(dds_sub, contrast = c("Cross", numerator, denominator))
     res_df <- as.data.frame(res_obj)
     res_df$gene <- rownames(res_df)
-
-    write.table(
-      res_df,
-      file = out_file,
-      sep = "\t",
-      quote = FALSE,
-      row.names = FALSE
-    )
   }
 
   if (!all(c("gene", "log2FoldChange") %in% names(res_df))) {
-    stop(out_file, " must contain columns: gene, log2FoldChange")
+    stop("DESeq table for ", label, " must contain columns: gene, log2FoldChange")
   }
 
   res_df <- res_df %>%
@@ -119,14 +115,6 @@ get_contrast_table <- function(label, numerator, denominator) {
       ortho %>% select(ORTHO_ID, `gene-AA` = CA_gene, `gene-GG` = CG_gene),
       by = c("gene" = "ORTHO_ID")
     )
-
-  write.table(
-    res_df,
-    file = out_file,
-    sep = "\t",
-    quote = FALSE,
-    row.names = FALSE
-  )
 
   res_df
 }
@@ -238,6 +226,7 @@ run_fgsea_for_comparison <- function(label, numerator, denominator) {
     fwrite(data.table(), file = fgsea_file, sep = "\t")
     return(list(
       label = label,
+      deseq = res_df,
       fgsea = data.frame(),
       ranks = data.frame(gene = names(ranks), rank_log2FC = as.numeric(ranks))
     ))
@@ -273,6 +262,7 @@ run_fgsea_for_comparison <- function(label, numerator, denominator) {
 
   list(
     label = label,
+    deseq = res_df,
     fgsea = fg_xlsx,
     ranks = data.frame(gene = names(ranks), rank_log2FC = as.numeric(ranks))
   )
@@ -287,6 +277,13 @@ results <- lapply(comparison_specs, function(spec) {
   run_fgsea_for_comparison(spec$label, spec$numerator, spec$denominator)
 })
 
+table_s1_sheets <- list()
+for (res in results) {
+  table_s1_sheets[[res$label]] <- res$deseq
+}
+
+writexl::write_xlsx(table_s1_sheets, path = "output/Table_S1.DESeq2.xlsx")
+
 workbook_sheets <- list()
 for (res in results) {
   suffix <- tolower(res$label)
@@ -297,6 +294,7 @@ for (res in results) {
 writexl::write_xlsx(workbook_sheets, path = "output/Table_S3.gsea.xlsx")
 
 message("Created:")
+message(" - output/Table_S1.DESeq2.xlsx")
 message(" - output/fgsea_term2gene_from_go.tsv")
 for (res in results) {
   message(" - output/fgsea_ranks_", res$label, "_log2FC.tsv")
