@@ -11,3 +11,11 @@ Original workflow versions retained for traceability:
 - `python` 3.7
 
 These standalone scripts do not load tools via absolute module paths; they assume equivalent commands are available in `PATH`.
+
+For exact run-time provenance in a new environment, generate a snapshot with:
+
+- `./script/ortho/00_log_tool_versions.sh output/tool_versions.snapshot.txt`
+
+In addition, each Salmon quantification now records the exact Salmon version used in:
+
+- `4-mapped-salmon/<sample>/salmon.version.txt`

@@ -10,6 +10,9 @@ They intentionally avoid:
 ## Required tools
 
 See [TOOL_VERSIONS.md](TOOL_VERSIONS.md) for the tool versions used in the original workflow.
+To snapshot exact versions in your current environment, run:
+
+`./script/ortho/00_log_tool_versions.sh output/tool_versions.snapshot.txt`
 
 Commands are expected to be available in `PATH`:
 - `bedtools`
@@ -24,6 +27,7 @@ Commands are expected to be available in `PATH`:
 
 ## Scripts
 
+- `00_log_tool_versions.sh` — records exact versions of required tools in the current environment
 - `01_combine_reference.sh` — prepares combined transcript reference and `tx2gene.with_mito.tsv`
 - `02_trim_reads.sh` — trims one paired-end sample with Trimmomatic
 - `03_build_salmon_index.sh` — builds the Salmon index
@@ -35,3 +39,4 @@ Commands are expected to be available in `PATH`:
 
 - `05_build_ortholog_table.sh` requires the helper `make_ortholog_matrix.py`, which is not present in this repository. Pass it explicitly with `--matrix-script /path/to/make_ortholog_matrix.py`.
 - Scripts write outputs relative to the project root, matching the current repository layout.
+- `04_run_salmon_quant.sh` writes the Salmon version used for each sample to `4-mapped-salmon/<sample>/salmon.version.txt`.

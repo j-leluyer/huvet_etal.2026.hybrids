@@ -24,6 +24,9 @@ R2="$TRIM_DIR/${SAMPLE_BASE}_R2.paired.fastq.gz"
 [[ -f "$R2" ]] || { echo "Missing $R2" >&2; exit 1; }
 mkdir -p "$OUT_DIR"
 
+SAMPLE_OUT="$OUT_DIR/$SAMPLE_BASE"
+mkdir -p "$SAMPLE_OUT"
+
 salmon quant \
   -i "$INDEX_DIR" \
   -l A \
@@ -33,4 +36,7 @@ salmon quant \
   --seqBias \
   --gcBias \
   -p "$THREADS" \
-  -o "$OUT_DIR/$SAMPLE_BASE"
+  -o "$SAMPLE_OUT"
+
+# Keep the exact Salmon version used for this quantification
+salmon --version > "$SAMPLE_OUT/salmon.version.txt" 2>&1 || true
