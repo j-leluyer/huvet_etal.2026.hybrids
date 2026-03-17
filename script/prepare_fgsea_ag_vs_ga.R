@@ -18,6 +18,10 @@ if (!requireNamespace("ComplexUpset", quietly = TRUE)) {
   install.packages("ComplexUpset", repos = "https://cloud.r-project.org")
 }
 
+if (!requireNamespace("ggVennDiagram", quietly = TRUE)) {
+  install.packages("ggVennDiagram", repos = "https://cloud.r-project.org")
+}
+
 args <- commandArgs(trailingOnly = TRUE)
 script_args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", script_args[grep("--file=", script_args)])
@@ -339,6 +343,49 @@ if (length(sig_cols) >= 2) {
   warning("Not enough non-empty DE gene sets to build UpSet plot (need at least 2).")
 }
 
+# FigS3: Venn diagram between AG_vs_GA DEGs and AG dominance classes
+dom_file <- file.path("output", "epst_with_deseq_dominance.tsv")
+if (file.exists(dom_file) && "AG_vs_GA" %in% names(table_s1_sheets)) {
+  dom_tbl <- fread(dom_file)
+
+  deg_ag_ga <- table_s1_sheets[["AG_vs_GA"]] %>%
+    filter(
+      !is.na(padj),
+      !is.na(log2FoldChange),
+      padj < sig_padj_threshold,
+      abs(log2FoldChange) > sig_lfc_threshold
+    ) %>%
+    pull(gene) %>%
+    unique()
+
+  class_sets <- lapply(
+    c("Underdominant", "Overdominant", "Additive", "GG_dominant"),
+    function(cls) unique(dom_tbl$gene[dom_tbl$class_AG == cls])
+  )
+  names(class_sets) <- c("Underdominant", "Overdominant", "Additive", "GG_dominant")
+
+  venn_sets <- c(list("AG_vs_GA_DEG" = deg_ag_ga), class_sets)
+  venn_sets <- venn_sets[vapply(venn_sets, length, integer(1)) > 0]
+
+  if (length(venn_sets) >= 2) {
+    p_venn <- ggVennDiagram::ggVennDiagram(
+      venn_sets,
+      label_alpha = 0,
+      edge_size = 0.5
+    ) +
+      scale_fill_gradient(low = "white", high = "#2166ac") +
+      ggtitle("FigS3. Overlap between AG_vs_GA DEGs and AG dominance classes") +
+      theme(legend.position = "right")
+
+    ggsave("output/figS3_venn_AGvsGA_DEG_dominance.png", p_venn, width = 8.5, height = 7, dpi = 300)
+    ggsave("output/figS3_venn_AGvsGA_DEG_dominance.pdf", p_venn, width = 8.5, height = 7)
+  } else {
+    warning("Not enough non-empty sets to build FigS3 Venn diagram (need at least 2).")
+  }
+} else {
+  warning("Cannot build FigS3 Venn diagram: missing output/epst_with_deseq_dominance.tsv or AG_vs_GA sheet.")
+}
+
 # Keep FGSEA focused on the manuscript contrasts
 comparison_specs <- list(
   list(label = "AG_vs_GA", numerator = "AG", denominator = "GA"),
@@ -361,6 +408,7 @@ writexl::write_xlsx(workbook_sheets, path = "output/Table_S3.gsea.xlsx")
 message("Created:")
 message(" - output/Table_S1.DESeq2.xlsx")
 message(" - output/figS2_upset_pairwise_DE.png/.pdf")
+message(" - output/figS3_venn_AGvsGA_DEG_dominance.png/.pdf")
 message(" - output/fgsea_term2gene_from_go.tsv")
 for (res in results) {
   message(" - output/fgsea_ranks_", res$label, "_log2FC.tsv")
