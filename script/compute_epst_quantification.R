@@ -95,7 +95,66 @@ compute_ePST <- function(x, group) {
   V_between / (V_between + 2 * V_within)
 }
 
-ePST <- apply(expr2, 1, compute_ePST, group = group)
+row_var_fast <- function(mat) {
+  n <- ncol(mat)
+  if (n <= 1) {
+    return(rep(NA_real_, nrow(mat)))
+  }
+  rs <- rowSums(mat)
+  rs2 <- rowSums(mat * mat)
+  (rs2 - (rs * rs) / n) / (n - 1)
+}
+
+compute_ePST_fast <- function(expr_mat, group_factor) {
+  lvl <- levels(group_factor)
+  if (length(lvl) != 2) {
+    stop("ePST requires exactly 2 groups.")
+  }
+
+  i1 <- group_factor == lvl[1]
+  i2 <- group_factor == lvl[2]
+
+  m1 <- rowMeans(expr_mat[, i1, drop = FALSE])
+  m2 <- rowMeans(expr_mat[, i2, drop = FALSE])
+  v1 <- row_var_fast(expr_mat[, i1, drop = FALSE])
+  v2 <- row_var_fast(expr_mat[, i2, drop = FALSE])
+
+  V_between <- ((m1 - m2) ^ 2) / 2
+  V_within <- (v1 + v2) / 2
+  den <- V_between + 2 * V_within
+
+  out <- V_between / den
+  out[!is.finite(out)] <- NA_real_
+  out
+}
+
+ePST <- compute_ePST_fast(expr2, group)
+names(ePST) <- rownames(expr2)
+
+n_perm <- suppressWarnings(as.integer(Sys.getenv("EPST_N_PERM", "1000")))
+if (is.na(n_perm) || n_perm < 1) {
+  stop("Invalid EPST_N_PERM; must be >= 1")
+}
+
+set.seed(1)
+n_genes <- nrow(expr2)
+null_epst <- numeric(n_genes * n_perm)
+extreme_counts <- integer(n_genes)
+
+message("Running ePST permutations: ", n_perm)
+for (b in seq_len(n_perm)) {
+  gp <- factor(sample(as.character(group), length(group), replace = FALSE), levels = levels(group))
+  e_perm <- compute_ePST_fast(expr2, gp)
+
+  idx_start <- (b - 1) * n_genes + 1
+  idx_end <- idx_start + n_genes - 1
+  null_epst[idx_start:idx_end] <- e_perm
+  extreme_counts <- extreme_counts + as.integer(e_perm >= ePST)
+}
+
+perm_thr975 <- unname(quantile(null_epst, 0.975, na.rm = TRUE))
+emp_p <- (extreme_counts + 1) / (n_perm + 1)
+names(emp_p) <- names(ePST)
 
 thr95 <- quantile(ePST, 0.95, na.rm = TRUE)
 thr99 <- quantile(ePST, 0.99, na.rm = TRUE)
@@ -108,7 +167,10 @@ stats_tbl <- tibble(
   q90_ePST = quantile(ePST, 0.9, na.rm = TRUE),
   q95_ePST = thr95,
   q99_ePST = thr99,
+  perm_n = n_perm,
+  perm_q975_threshold = perm_thr975,
   n_above_q95 = sum(ePST > thr95, na.rm = TRUE),
+  n_above_perm_q975 = sum(ePST > perm_thr975, na.rm = TRUE),
   prop_above_0_12 = mean(ePST > 0.12, na.rm = TRUE)
 )
 
@@ -122,9 +184,12 @@ write.table(
 
 epst_tbl <- tibble(
   gene = names(ePST),
-  ePST = as.numeric(ePST)
+  ePST = as.numeric(ePST),
+  perm_pvalue = as.numeric(emp_p)
 ) %>%
   mutate(
+    perm_fdr = p.adjust(perm_pvalue, method = "BH"),
+    is_outlier_perm_q975 = ePST > perm_thr975,
     epst_class = case_when(
       ePST < 0.05 ~ "Mostly plastic / shared regulation",
       ePST < 0.12 ~ "Weak differentiation",
@@ -132,6 +197,19 @@ epst_tbl <- tibble(
       TRUE ~ "Strong divergence"
     )
   )
+
+perm_tbl <- tibble(
+  quantile = c(0.90, 0.95, 0.975, 0.99),
+  null_ePST = as.numeric(quantile(null_epst, c(0.90, 0.95, 0.975, 0.99), na.rm = TRUE))
+)
+
+write.table(
+  perm_tbl,
+  file = "output/epst_permutation_null_quantiles.tsv",
+  sep = "\t",
+  quote = FALSE,
+  row.names = FALSE
+)
 
 write.table(
   epst_tbl,
@@ -148,14 +226,14 @@ res_tbl$class_AG <- class_AG[res_tbl$gene]
 res_tbl$absLFC <- abs(res_tbl$log2FoldChange)
 res_tbl <- res_tbl[complete.cases(res_tbl$ePST, res_tbl$log2FoldChange), , drop = FALSE]
 
-set_strong <- with(res_tbl, padj < 1e-4 & absLFC > 2 & ePST > thr95)
-set_consistent <- with(res_tbl, ePST > thr95 & absLFC < 1)
+set_strong <- with(res_tbl, padj < 1e-4 & absLFC > 2 & ePST > perm_thr975)
+set_consistent <- with(res_tbl, ePST > perm_thr975 & absLFC < 1)
 set_noisy <- with(res_tbl, absLFC > 2 & ePST < quantile(ePST, 0.5, na.rm = TRUE))
 
 res_tbl$set_strong <- set_strong
 res_tbl$set_consistent <- set_consistent
 res_tbl$set_noisy <- set_noisy
-res_tbl$hit <- with(res_tbl, ePST > thr95 & absLFC > 2 & padj < 1e-4)
+res_tbl$hit <- with(res_tbl, ePST > perm_thr975 & absLFC > 2 & padj < 1e-4)
 
 write.table(
   res_tbl,
@@ -216,18 +294,30 @@ p_lfc_epst <- ggplot(res_tbl, aes(x = absLFC, y = ePST)) +
     size = 0.8
   ) +
   scale_color_manual(values = dom_cols, drop = FALSE) +
-  geom_hline(yintercept = thr95, linetype = "dashed") +
+  geom_hline(yintercept = perm_thr975, linetype = "dashed") +
   geom_vline(xintercept = 2, linetype = "dashed") +
   theme_classic() +
-  labs(x = "|log2FC| (GG vs AA)", y = "ePST", color = "AG class", title = "ePST vs expression shift")
+  labs(x = "|log2FC| (GG vs AA)", y = "ePST", color = "AG class", title = "ePST vs expression shift (perm q97.5 threshold)")
 
 p_hit <- ggplot(res_tbl, aes(x = absLFC, y = ePST)) +
-  geom_point(aes(color = class_AG), size = 0.5, alpha = 0.25) +
+  geom_point(
+    data = subset(res_tbl, class_AG == "Ambiguous"),
+    color = "grey85",
+    size = 0.5,
+    alpha = 0.25
+  ) +
+  geom_point(
+    data = subset(res_tbl, class_AG != "Ambiguous"),
+    aes(color = class_AG),
+    size = 0.5,
+    alpha = 0.35
+  ) +
   geom_point(data = subset(res_tbl, hit), size = 1.1, color = "black") +
-  geom_hline(yintercept = thr95, linetype = "dashed") +
+  scale_color_manual(values = dom_cols, drop = FALSE) +
+  geom_hline(yintercept = perm_thr975, linetype = "dashed") +
   geom_vline(xintercept = 2, linetype = "dashed") +
   theme_classic() +
-  labs(x = "|log2FC| (GG vs AA)", y = "ePST", color = "AG class", title = "Top candidates highlighted")
+  labs(x = "|log2FC| (GG vs AA)", y = "ePST", color = "AG class", title = "Top candidates highlighted (perm q97.5)")
 
 p_bin2d <- ggplot(res_tbl, aes(x = absLFC, y = ePST)) +
   geom_bin2d(bins = 80) +
@@ -248,6 +338,7 @@ ggsave("output/epst_bin2d_by_class.png", p_bin2d, width = 9, height = 6, dpi = 3
 
 message("Created ePST outputs in output/:\n",
         " - epst_summary_stats.tsv\n",
+  " - epst_permutation_null_quantiles.tsv\n",
         " - epst_gene_values.tsv\n",
         " - epst_with_deseq_dominance.tsv\n",
         " - epst_set_strong.tsv\n",
