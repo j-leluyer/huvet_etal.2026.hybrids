@@ -14,6 +14,18 @@ R (>= 4.2 recommended) with required packages used by the script:
 
 `vegan, ape, mclust, reshape2, DESeq2, ggplot2, pheatmap, RColorBrewer, cluster, dplyr, PCAtools, KOGMWU, assertthat, scales, WGCNA, tidyverse, ggpubr, rstatix, MCMCglmm, flashClust, adegenet, variancePartition, BiocParallel, limma, car`
 
+External programs used for ortholog quantification (original workflow versions):
+
+- `bedtools` 2.30.0
+- `trimmomatic` 0.36
+- `salmon` 1.10.0
+- `seqkit` 2.9.0
+- `TransDecoder` 5.7.1
+- `diamond` 2.1.10
+- `python` 3.7
+
+See [script/ortho/TOOL_VERSIONS.md](script/ortho/TOOL_VERSIONS.md) for details.
+
 ## Run
 
 From the project root:
