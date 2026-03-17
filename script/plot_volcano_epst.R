@@ -68,7 +68,7 @@ hline_threshold <- -log10(perm_thr975)          # ePST permutation q97.5 in −l
 dat <- dat %>%
   mutate(
     in_core = neg_log10_ePST <= hline_threshold & log2FoldChange >= -2 & log2FoldChange <= 2,
-    is_specific = class_AG != "Ambiguous"
+    is_specific = !(class_AG %in% c("Ambiguous", "AA_dominant"))
   )
 
 dat_core_amb <- filter(dat, in_core & !is_specific)
@@ -100,7 +100,7 @@ p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
   geom_hline(yintercept = hline_threshold,
              linetype   = "dotted", linewidth = 0.5, color = "firebrick") +
 
-  scale_fill_manual(values = dom_cols, drop = FALSE,
+  scale_fill_manual(values = dom_cols, drop = TRUE,
                     name   = "AG dominance class") +
 
   labs(
