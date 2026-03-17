@@ -26,6 +26,19 @@ External programs used for ortholog quantification (original workflow versions):
 
 See [script/ortho/TOOL_VERSIONS.md](script/ortho/TOOL_VERSIONS.md) for details.
 
+External programs used for ASE/WASP workflow (original workflow versions):
+
+- `trimmomatic` 0.36
+- `STAR` 2.7.11a (mapping) and 2.7.10b (genome indexing)
+- `samtools` 1.22.1
+- `GATK` 4.4.0.0
+- `bcftools` 1.23
+- `bedtools` 2.30.0
+- `tabix` 0.2.6
+- `python3` (helper scripts)
+
+See [script/ase/TOOL_VERSIONS.md](script/ase/TOOL_VERSIONS.md) for details.
+
 ## Run
 
 From the project root:
