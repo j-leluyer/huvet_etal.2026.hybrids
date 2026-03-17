@@ -44,8 +44,6 @@ dat <- dat %>%
   filter(!is.na(ePST), ePST > 0, !is.na(log2FoldChange)) %>%
   mutate(
     neg_log10_ePST  = -log10(ePST),
-    is_outlier      = ePST > perm_thr975,
-    is_volcano_hit  = ePST > perm_thr975 & abs(log2FoldChange) >= 2,
     class_AG        = factor(class_AG,
                              levels = c("Ambiguous", "Additive",
                                         "AA_dominant", "GG_dominant",
@@ -66,19 +64,30 @@ dom_cols <- c(
 vline_lfc      <- c(-2, 2)                      # user-requested vertical lines
 hline_threshold <- -log10(perm_thr975)          # ePST permutation q97.5 in −log10 scale
 
-# Split background from highlighted points
-dat_bg  <- dat
-dat_hit <- filter(dat, is_volcano_hit)
+# Categories for plotting style
+dat <- dat %>%
+  mutate(
+    in_core = neg_log10_ePST <= hline_threshold & log2FoldChange >= -2 & log2FoldChange <= 2,
+    is_specific = class_AG != "Ambiguous"
+  )
+
+dat_core_amb <- filter(dat, in_core & !is_specific)
+dat_other_amb <- filter(dat, !in_core & !is_specific)
+dat_specific <- filter(dat, is_specific)
 
 # ── Volcano plot ─────────────────────────────────────────────────────────────
 p_volcano <- ggplot(dat, aes(x = log2FoldChange, y = neg_log10_ePST)) +
 
-  # background layer: all genes in black
-  geom_point(data = dat_bg,
-             color = "black", alpha = 0.20, size = 0.55, shape = 16) +
+  # points below horizontal threshold and between vertical thresholds
+  geom_point(data = dat_core_amb,
+             color = "grey82", alpha = 0.45, size = 0.55, shape = 16) +
 
-  # highlight only points above horizontal threshold and outside vertical lanes
-  geom_point(data = dat_hit,
+  # other ambiguous points in black
+  geom_point(data = dat_other_amb,
+             color = "black", alpha = 0.35, size = 0.55, shape = 16) +
+
+  # non-ambiguous points highlighted with class color
+  geom_point(data = dat_specific,
              aes(fill = class_AG),
              shape = 21, size = 1.5,
              color = "black", stroke = 0.35, alpha = 0.95) +
