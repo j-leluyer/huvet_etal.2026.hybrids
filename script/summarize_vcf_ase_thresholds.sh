@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <input.vcf.gz|input.bcf> [out_dir]" >&2
+  echo "Usage: $0 <input.vcf|input.vcf.gz|input.bcf> [out_dir]" >&2
   exit 1
 fi
 
@@ -21,8 +21,10 @@ SUMMARY_OUT="$OUT_DIR/vcf_summary_stats.tsv"
 GRID_OUT="$OUT_DIR/vcf_threshold_grid.tsv"
 RECO_OUT="$OUT_DIR/vcf_recommended_thresholds.tsv"
 
-# 1) Extract key per-site values; fill AN/AC/F_MISSING/DP tags when missing
-bcftools +fill-tags "$INPUT_VCF" -Ou -- -t AN,AC,NS,F_MISSING,DP \
+# 1) Extract key per-site values; fill AN/AC/F_MISSING when missing
+#    (INFO/DP is read as-is because +fill-tags does not support INFO/DP)
+bcftools view -Ou "$INPUT_VCF" \
+  | bcftools +fill-tags -Ou -- -t AN,AC,NS,F_MISSING \
   | bcftools query -f '%CHROM\t%POS\t%QUAL\t%INFO/DP\t%AN\t%AC\t%INFO/F_MISSING\n' \
   > "$RAW_METRICS"
 

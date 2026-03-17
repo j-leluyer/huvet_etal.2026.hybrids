@@ -8,7 +8,7 @@ args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 1) {
   cat(
     "Usage:\n",
-    "  Rscript script/summarize_vcf_ase_thresholds.R <input.vcf.gz|input.bcf> [out_dir]\n\n",
+    "  Rscript script/summarize_vcf_ase_thresholds.R <input.vcf|input.vcf.gz|input.bcf> [out_dir]\n\n",
     "Outputs:\n",
     "  - vcf_site_metrics.tsv.gz\n",
     "  - vcf_summary_stats.tsv\n",
@@ -29,9 +29,11 @@ tmp_tsv <- tempfile(pattern = "vcf_metrics_", fileext = ".tsv")
 on.exit(unlink(tmp_tsv), add = TRUE)
 
 # Fill key INFO tags to avoid missing AC/AN/F_MISSING when absent in input VCF
+# (INFO/DP is queried as-is because +fill-tags does not support INFO/DP)
 query_fmt <- "%CHROM\\t%POS\\t%QUAL\\t%INFO/DP\\t%AN\\t%AC\\t%INFO/F_MISSING\\n"
 cmd <- paste(
-  "bcftools +fill-tags", shQuote(input_vcf), "-Ou -- -t AN,AC,NS,F_MISSING,DP",
+  "bcftools view -Ou", shQuote(input_vcf),
+  "| bcftools +fill-tags -Ou -- -t AN,AC,NS,F_MISSING",
   "| bcftools query -f", shQuote(query_fmt), ">", shQuote(tmp_tsv)
 )
 status <- system(cmd)
