@@ -11,8 +11,8 @@ set -euo pipefail
 
 cd $PBS_O_WORKDIR
 TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
-index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
-Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.dict"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.fasta"
 OUTDIR="/home1/scratch/jleluyer/hybrids/5-snps"
 OUTPREFIX="pb"
 
@@ -25,23 +25,53 @@ MARKER_VCF="${OUTDIR}/${OUTPREFIX}.AF_markers.vcf.gz"
 MARKER_AB_VCF="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.vcf.gz"
 MARKER_VCF_ACGT="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.vcf.gz"
 
-REF="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+REF="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.fasta"
 
 THREADS=8
 JAVA_MEM="32g"
 
-# ---- site-level thresholds ----
-MIN_QUAL=20          # site QUAL
-MIN_INFO_DP=12       # site INFO/DP (cohort depth)
-MAX_MISSING=0.20     # allow up to 20% missing genotypes across samples
+# ----------------------------------------------------------------------------
+# Threshold profile: choose `discovery` (more SNPs) or `strict` (higher stringency)
+# Usage example in PBS or shell:
+#   PROFILE=discovery qsub 7-filter_AF_gvcf.pbs
+#   PROFILE=strict    qsub 7-filter_AF_gvcf.pbs
+# ----------------------------------------------------------------------------
+PROFILE="${PROFILE:-discovery}"
 
-# ---- genotype-level thresholds (Option C) ----
-# Apply AB filter ONLY if genotype DP >= MIN_AB_DP, and only for heterozygotes
-MIN_DP=12            # set GT to missing if DP < MIN_DP
-MIN_GQ=20            # set GT to missing if GQ < MIN_GQ
-MIN_AB_DP=20         # only apply AB filter when DP >= 20
-AB_LO=0.20
-AB_HI=0.80
+case "$PROFILE" in
+  discovery)
+    # Liberal settings for marker discovery / STAR-WASP input
+    MIN_QUAL=15
+    MIN_INFO_DP=8
+    MAX_MISSING=0.50
+
+    MIN_DP=8
+    MIN_GQ=15
+    MIN_AB_DP=12
+    AB_LO=0.10
+    AB_HI=0.90
+    ;;
+  strict)
+    # Conservative settings for high-confidence marker sets
+    MIN_QUAL=20
+    MIN_INFO_DP=12
+    MAX_MISSING=0.20
+
+    MIN_DP=12
+    MIN_GQ=20
+    MIN_AB_DP=20
+    AB_LO=0.20
+    AB_HI=0.80
+    ;;
+  *)
+    echo "Unknown PROFILE='$PROFILE' (expected: discovery or strict)" >&2
+    exit 1
+    ;;
+esac
+
+echo "Using PROFILE=${PROFILE}"
+echo "MIN_QUAL=${MIN_QUAL}, MIN_INFO_DP=${MIN_INFO_DP}, MAX_MISSING=${MAX_MISSING}"
+echo "MIN_DP=${MIN_DP}, MIN_GQ=${MIN_GQ}, MIN_AB_DP=${MIN_AB_DP}, AB=[${AB_LO},${AB_HI}]"
 
 
 . /appli/anaconda/latest/etc/profile.d/conda.sh
