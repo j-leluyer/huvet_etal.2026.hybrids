@@ -43,12 +43,23 @@ GENOMEDIR="$GENOMEFOLDER/$GENOME"
 [[ -f "$R2" ]] || { echo "Missing read file: $R2" >&2; exit 1; }
 [[ -d "$GENOMEDIR" ]] || { echo "Missing STAR genome index: $GENOMEDIR" >&2; exit 1; }
 
-if [[ -f "$STAR_VCF" ]]; then
-  WASP_VCF="$STAR_VCF"
-elif [[ -f "$MARKER_VCF_ACGT" ]]; then
-  WASP_VCF="$MARKER_VCF_ACGT"
+# Prefer full-genome marker VCF for WASP
+if [[ -f "$MARKER_VCF_ACGT" ]]; then
+  WASP_VCF_SOURCE="$MARKER_VCF_ACGT"
+  WASP_VCF_CMD=(pigz -dc -p "${READ_DECOMP_THREADS}" "$MARKER_VCF_ACGT")
+elif [[ -f "${MARKER_VCF_ACGT%.gz}" ]]; then
+  WASP_VCF_SOURCE="${MARKER_VCF_ACGT%.gz}"
+  WASP_VCF_CMD=(cat "${MARKER_VCF_ACGT%.gz}")
+elif [[ -f "$STAR_VCF" ]]; then
+  WASP_VCF_SOURCE="$STAR_VCF"
+  WASP_VCF_CMD=(pigz -dc -p "${READ_DECOMP_THREADS}" "$STAR_VCF")
+  echo "WARNING: full marker VCF not found, falling back to $STAR_VCF" >&2
+elif [[ -f "${STAR_VCF%.gz}" ]]; then
+  WASP_VCF_SOURCE="${STAR_VCF%.gz}"
+  WASP_VCF_CMD=(cat "${STAR_VCF%.gz}")
+  echo "WARNING: full marker VCF not found, falling back to ${STAR_VCF%.gz}" >&2
 else
-  echo "Missing WASP VCF. Expected $STAR_VCF or $MARKER_VCF_ACGT" >&2
+  echo "Missing WASP VCF. Expected $MARKER_VCF_ACGT (preferred) or $STAR_VCF" >&2
   exit 1
 fi
 
@@ -56,6 +67,7 @@ mkdir -p "$DATAOUTPUT"
 
 # Align reads with WASP SNP list
 echo "Aligning $base"
+echo "Using WASP VCF source: $WASP_VCF_SOURCE"
 STAR \
   --runThreadN "$NCPUS" \
   --genomeDir "$GENOMEDIR" \
@@ -72,7 +84,7 @@ STAR \
   --outSAMattrRGline ID:"$base" SM:"$base" PL:ILLUMINA \
   --outSAMtype BAM Unsorted \
   --outFileNamePrefix "$DATAOUTPUT"/"$base"_ \
-  --varVCFfile "$WASP_VCF" \
+  --varVCFfile <("${WASP_VCF_CMD[@]}") \
   --waspOutputMode SAMtag
 
 [[ -f "$DATAOUTPUT/${base}_Aligned.out.bam" ]] || { echo "STAR output BAM missing for $base" >&2; exit 1; }
