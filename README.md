@@ -93,6 +93,36 @@ cd script/ortho
 
 See [script/ortho/README.md](script/ortho/README.md) for the standalone ortho pipeline details. Legacy `jobs/` cluster submission files are excluded from the repository.
 
+Run ASE marker filtering (PBS, resumable from selected step):
+
+```bash
+qsub script/ase/7-filter_AF_gvcf.pbs
+```
+
+Important runtime parameters for `script/ase/7-filter_AF_gvcf.pbs`:
+
+- `START_STEP`: resume point (default `7`) to avoid re-running upstream completed steps (`2,3,5,6`).
+- `ENABLE_AB_MASKING`: `0` (default) disables AB masking at step 7; `1` enables AB masking.
+- `MIN_DAF`: parent-informative threshold `|AF_AA - AF_GG|` (default `0.40`).
+- `MAX_MISS_GROUP`: max missingness in AA and GG group VCFs before deltaAF join (default `0.50`).
+- `HYB_MIN_DP`: hybrid genotype DP masking threshold in step 12 (default `8`).
+- `HYB_MAX_MISSING`: max missingness allowed across hybrids in step 12 (default `0.50`).
+- `AB_MAX_MISSING`: post-AB site missingness threshold (default `1.00`, effectively disabled).
+
+Example: rerun only downstream steps with relaxed thresholds and no AB masking:
+
+```bash
+PROFILE=balanced START_STEP=7 ENABLE_AB_MASKING=0 \
+MIN_DAF=0.40 MAX_MISS_GROUP=0.50 HYB_MIN_DP=8 HYB_MAX_MISSING=0.50 AB_MAX_MISSING=1.00 \
+qsub script/ase/7-filter_AF_gvcf.pbs
+```
+
+Example: full rerun from raw biallelic SNP extraction:
+
+```bash
+PROFILE=balanced START_STEP=2 ENABLE_AB_MASKING=1 qsub script/ase/7-filter_AF_gvcf.pbs
+```
+
 ## Notes
 
 - The pipeline now auto-detects its project root and avoids hardcoded absolute paths.

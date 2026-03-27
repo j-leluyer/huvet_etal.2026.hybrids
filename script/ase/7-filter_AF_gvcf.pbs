@@ -11,35 +11,53 @@ set -euo pipefail
 
 cd $PBS_O_WORKDIR
 TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
-index="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.dict"
+#index="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.dict"
 Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.fasta"
 OUTDIR="/home1/scratch/jleluyer/hybrids/5-snps"
 OUTPREFIX="pb"
 
 JOINT_VCF="${OUTDIR}/combined.raw.vcf.gz"
 SNP_VCF="${OUTDIR}/${OUTPREFIX}.snps.bi.vcf.gz"
+SNP_DP_CLEAN="${OUTDIR}/${OUTPREFIX}.snps.bi.dpclean.vcf.gz"
+SNP_GQ_CLEAN="${OUTDIR}/${OUTPREFIX}.snps.bi.gqclean.vcf.gz"
 SNP_GT_CLEAN="${OUTDIR}/${OUTPREFIX}.snps.bi.gtclean.vcf.gz"
 FILLED="${OUTDIR}/${OUTPREFIX}.snps.bi.gtclean.filled.vcf.gz"
 
 MARKER_VCF="${OUTDIR}/${OUTPREFIX}.AF_markers.vcf.gz"
 MARKER_AB_VCF="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.vcf.gz"
 MARKER_VCF_ACGT="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.vcf.gz"
+HYB_MARKER_VCF="${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.hybrids.filtered.vcf.gz"
+STAR_ONLY_VCF="${OUTDIR}/${OUTPREFIX}.star_only.vcf.gz"
+STAR_WASP_SNP_LIST="${OUTDIR}/${OUTPREFIX}.star_wasp.snps.tsv"
+STAR_WASP_SNP_LIST_KEY="${OUTDIR}/${OUTPREFIX}.star_wasp.snps.key.tsv"
 
 REF="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data/GCF_025612915.1/GCF_025612915.1_ASM2561291v2_genomic.fasta"
 
 THREADS=8
 JAVA_MEM="32g"
 
+# Parent-informative and hybrid re-filter thresholds
+MIN_DAF="${MIN_DAF:-0.40}"                 # |AF_AA - AF_GG| threshold
+MAX_MISS_GROUP="${MAX_MISS_GROUP:-0.50}"   # missingness in each pure group
+HYB_MIN_DP="${HYB_MIN_DP:-8}"              # hybrid GT DP threshold
+HYB_MAX_MISSING="${HYB_MAX_MISSING:-0.50}" # missingness across hybrids
+AB_MAX_MISSING="${AB_MAX_MISSING:-1.00}"   # post-AB site missingness (set 1.0 to disable)
+ENABLE_AB_MASKING="${ENABLE_AB_MASKING:-0}" # 0=skip step 7 masking, 1=apply AB masking
+
+# Resume control: set START_STEP=2 for full run, or 7 to reuse steps 2-6 outputs
+START_STEP="${START_STEP:-7}"
+
 # ----------------------------------------------------------------------------
-# Threshold profile: choose `discovery` (more SNPs) or `strict` (higher stringency)
+# Threshold profile: choose `permissive`, `balanced`, or `strict`
 # Usage example in PBS or shell:
-#   PROFILE=discovery qsub 7-filter_AF_gvcf.pbs
-#   PROFILE=strict    qsub 7-filter_AF_gvcf.pbs
+#   PROFILE=permissive qsub 7-filter_AF_gvcf.pbs
+#   PROFILE=balanced   qsub 7-filter_AF_gvcf.pbs
+#   PROFILE=strict     qsub 7-filter_AF_gvcf.pbs
 # ----------------------------------------------------------------------------
-PROFILE="${PROFILE:-discovery}"
+PROFILE="${PROFILE:-balanced}"
 
 case "$PROFILE" in
-  discovery)
+  permissive)
     # Liberal settings for marker discovery / STAR-WASP input
     MIN_QUAL=15
     MIN_INFO_DP=8
@@ -50,6 +68,18 @@ case "$PROFILE" in
     MIN_AB_DP=12
     AB_LO=0.10
     AB_HI=0.90
+    ;;
+  balanced)
+    # Middle-ground settings matching the summary script's balanced profile
+    MIN_QUAL=20
+    MIN_INFO_DP=10
+    MAX_MISSING=0.30
+
+    MIN_DP=10
+    MIN_GQ=20
+    MIN_AB_DP=8
+    AB_LO=0.15
+    AB_HI=0.85
     ;;
   strict)
     # Conservative settings for high-confidence marker sets
@@ -64,7 +94,7 @@ case "$PROFILE" in
     AB_HI=0.80
     ;;
   *)
-    echo "Unknown PROFILE='$PROFILE' (expected: discovery or strict)" >&2
+    echo "Unknown PROFILE='$PROFILE' (expected: permissive, balanced, or strict)" >&2
     exit 1
     ;;
 esac
@@ -72,50 +102,128 @@ esac
 echo "Using PROFILE=${PROFILE}"
 echo "MIN_QUAL=${MIN_QUAL}, MIN_INFO_DP=${MIN_INFO_DP}, MAX_MISSING=${MAX_MISSING}"
 echo "MIN_DP=${MIN_DP}, MIN_GQ=${MIN_GQ}, MIN_AB_DP=${MIN_AB_DP}, AB=[${AB_LO},${AB_HI}]"
+echo "AB_MAX_MISSING=${AB_MAX_MISSING}"
+echo "ENABLE_AB_MASKING=${ENABLE_AB_MASKING}"
+echo "MIN_DAF=${MIN_DAF}, MAX_MISS_GROUP=${MAX_MISS_GROUP}"
+echo "HYB_MIN_DP=${HYB_MIN_DP}, HYB_MAX_MISSING=${HYB_MAX_MISSING}"
+echo "START_STEP=${START_STEP}"
+
+if ! [[ "${START_STEP}" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: START_STEP must be numeric (e.g. 2, 3, 5, 7, 11). Got '${START_STEP}'" >&2
+  exit 1
+fi
+
+if ! [[ "${ENABLE_AB_MASKING}" =~ ^[01]$ ]]; then
+  echo "ERROR: ENABLE_AB_MASKING must be 0 or 1. Got '${ENABLE_AB_MASKING}'" >&2
+  exit 1
+fi
+
+require_indexed_vcf () {
+  local vcf="$1"
+  local label="$2"
+  if [[ ! -s "${vcf}" || ! -s "${vcf}.tbi" ]]; then
+    echo "ERROR: Missing ${label}: ${vcf} (and/or ${vcf}.tbi). Lower START_STEP or regenerate upstream files." >&2
+    exit 1
+  fi
+}
 
 
 . /appli/anaconda/latest/etc/profile.d/conda.sh
 conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2
 
 echo "==> 2) Keep biallelic SNPs only"
-bcftools view -v snps -m2 -M2 -Oz -o "${SNP_VCF}" "${JOINT_VCF}"
-bcftools index -t "${SNP_VCF}"
+if (( START_STEP <= 2 )); then
+  bcftools view -v snps -m2 -M2 -Oz -o "${SNP_VCF}" "${JOINT_VCF}"
+  bcftools index -t "${SNP_VCF}"
+else
+  echo "==> 2) Skipped (START_STEP=${START_STEP}); reusing ${SNP_VCF}"
+  require_indexed_vcf "${SNP_VCF}" "step 2 output SNP_VCF"
+fi
 
-echo "==> 3) Set low-quality genotypes to missing (DP/GQ filters)"
-bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_GT_CLEAN}" -- \
-  -t q -n . -i "FMT/DP<${MIN_DP} || FMT/GQ<${MIN_GQ}"
-bcftools index -t "${SNP_GT_CLEAN}"
+N_SITES=$(bcftools view -H "${SNP_VCF}" | wc -l)
+N_SAMPLES=$(bcftools query -l "${SNP_VCF}" | wc -l)
+
+summarize_mask_impact () {
+  local label="$1"
+  local vcf="$2"
+  local keep_sites
+  keep_sites=$(bcftools +fill-tags --threads ${THREADS} "${vcf}" -Ou -- -t F_MISSING \
+    | bcftools view --threads ${THREADS} -i "F_MISSING<=${MAX_MISSING}" -H | wc -l)
+
+  bcftools +fill-tags --threads ${THREADS} "${vcf}" -Ou -- -t NS \
+    | bcftools query -f '%INFO/NS\n' \
+    | awk -v label="${label}" -v nsites="${N_SITES}" -v nsamp="${N_SAMPLES}" -v keepSites="${keep_sites}" '
+      {sumNS += ($1+0)}
+      END {
+        totalGT = nsites*nsamp
+        calledGT = sumNS
+        missingGT = totalGT - calledGT
+        missRate = (totalGT>0 ? missingGT/totalGT : 0)
+        keepRate = (nsites>0 ? keepSites/nsites : 0)
+        printf "%s\t%d\t%d\t%d\t%.6f\t%d\t%.6f\n", label, totalGT, calledGT, missingGT, missRate, keepSites, keepRate
+      }'
+}
+
+echo "==> 3a) Diagnose DP vs GQ impact before combined masking"
+if (( START_STEP <= 3 )); then
+  bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_DP_CLEAN}" -- \
+    -t q -n . -i "FMT/DP<${MIN_DP}"
+  bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_GQ_CLEAN}" -- \
+    -t q -n . -i "FMT/GQ<${MIN_GQ}"
+
+  echo -e "label\ttotal_gt\tcalled_gt\tmissing_gt\tmissing_rate\tsites_pass_missing\tsites_pass_missing_rate"
+  summarize_mask_impact "baseline" "${SNP_VCF}"
+  summarize_mask_impact "dp_only" "${SNP_DP_CLEAN}"
+  summarize_mask_impact "gq_only" "${SNP_GQ_CLEAN}"
+
+  echo "==> 3) Set low-quality genotypes to missing (DP/GQ filters)"
+  bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_GT_CLEAN}" -- \
+    -t q -n . -i "FMT/DP<${MIN_DP} || FMT/GQ<${MIN_GQ}"
+  bcftools index -t "${SNP_GT_CLEAN}"
+else
+  echo "==> 3) Skipped (START_STEP=${START_STEP}); reusing ${SNP_GT_CLEAN}"
+  require_indexed_vcf "${SNP_GT_CLEAN}" "step 3 output SNP_GT_CLEAN"
+fi
 # -----------------------------
 # 5) Fill tags (ensure F_MISSING exists and is consistent)
 # -----------------------------
 echo "==> 5) Fill tags: AC,AN,AF,MAF,F_MISSING"
-bcftools +fill-tags --threads ${THREADS} "${SNP_GT_CLEAN}" \
-  -Oz -o "${FILLED}" -- -t AC,AN,AF,MAF,F_MISSING
-bcftools index -t --threads ${THREADS} "${FILLED}"
+if (( START_STEP <= 5 )); then
+  bcftools +fill-tags --threads ${THREADS} "${SNP_GT_CLEAN}" \
+    -Oz -o "${FILLED}" -- -t AC,AN,AF,MAF,F_MISSING
+  bcftools index -t --threads ${THREADS} "${FILLED}"
+else
+  echo "==> 5) Skipped (START_STEP=${START_STEP}); reusing ${FILLED}"
+  require_indexed_vcf "${FILLED}" "step 5 output FILLED"
+fi
 
 # -----------------------------
 # 6) Site-level QC (broad marker set)
 # -----------------------------
 echo "==> 6) Site-level QC (QUAL/INFO-DP/F_MISSING/AC)"
-bcftools view --threads ${THREADS} \
-  -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP} && F_MISSING<=${MAX_MISSING} && AC>=2 && AC<=AN-2" \
-  -Oz -o "${MARKER_VCF}" "${FILLED}"
-bcftools index -t --threads ${THREADS} "${MARKER_VCF}"
+if (( START_STEP <= 6 )); then
+  bcftools view --threads ${THREADS} \
+    -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP} && F_MISSING<=${MAX_MISSING} && AC>=2 && AC<=AN-2" \
+    -Oz -o "${MARKER_VCF}" "${FILLED}"
+  bcftools index -t --threads ${THREADS} "${MARKER_VCF}"
+else
+  echo "==> 6) Skipped (START_STEP=${START_STEP}); reusing ${MARKER_VCF}"
+  require_indexed_vcf "${MARKER_VCF}" "step 6 output MARKER_VCF"
+fi
 echo "Sites after site-QC: $(bcftools view -H ${MARKER_VCF} | wc -l)"
 
 # -----------------------------
-# 7) Option C AB masking (parents): mask genotypes if
-#    - DP < MIN_DP, OR
-#    - heterozygous AND DP >= MIN_AB_DP AND AB outside [0.25,0.75]
+# 7) Option C AB masking (parents): mask heterozygous genotypes if
+#    - DP >= MIN_AB_DP AND AB outside [AB_LO,AB_HI]
 #
 # IMPORTANT:
 # - Use GT=... (not FMT/GT)
 # - Include phased hets
 # - Assume biallelic SNPs (m2/M2 + N_ALT=1)
 # -----------------------------
-echo "==> 7) AB masking Option C (apply only if DP>=${MIN_AB_DP}, AB in [${AB_LO},${AB_HI}])"
+echo "==> 7) AB masking Option C (ENABLE_AB_MASKING=${ENABLE_AB_MASKING}; DP>=${MIN_AB_DP}, AB in [${AB_LO},${AB_HI}])"
 
-MASK_EXPR='FMT/DP<'${MIN_DP}' || (
+MASK_EXPR='(
   (GT="0/1" || GT="1/0" || GT="0|1" || GT="1|0") &&
   FMT/DP>='${MIN_AB_DP}' &&
   N_ALT=1 &&
@@ -126,20 +234,25 @@ MASK_EXPR='FMT/DP<'${MIN_DP}' || (
   )
 )'
 
-# Pipeline:
-#  1) force biallelic SNPs and re-apply basic site constraints (cheap safety)
-#  2) mask genotypes per MASK_EXPR
-#  3) re-fill AC/AN/AF/F_MISSING after masking
-#  4) re-apply site missingness + AC constraints
-bcftools view --threads ${THREADS} -m2 -M2 -v snps -Ou \
-  -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP}" \
-  "${MARKER_VCF}" \
-| bcftools +setGT --threads ${THREADS} -Ou -- \
-    -t q -n . \
-    -i "${MASK_EXPR}" \
-| bcftools +fill-tags --threads ${THREADS} -Ou -- -t AC,AN,AF,F_MISSING \
-| bcftools view --threads ${THREADS} -Oz -o "${MARKER_AB_VCF}" \
-    -i "F_MISSING<=${MAX_MISSING} && AC>=2 && AC<=AN-2"
+if (( ENABLE_AB_MASKING == 1 )); then
+  # Pipeline:
+  #  1) force biallelic SNPs and re-apply basic site constraints (cheap safety)
+  #  2) mask genotypes per MASK_EXPR
+  #  3) re-fill AC/AN/AF/F_MISSING after masking
+  #  4) re-apply site missingness + AC constraints
+  bcftools view --threads ${THREADS} -m2 -M2 -v snps -Ou \
+    -i "QUAL>=${MIN_QUAL} && INFO/DP>=${MIN_INFO_DP}" \
+    "${MARKER_VCF}" \
+  | bcftools +setGT --threads ${THREADS} -Ou -- \
+      -t q -n . \
+      -i "${MASK_EXPR}" \
+  | bcftools +fill-tags --threads ${THREADS} -Ou -- -t AC,AN,AF,F_MISSING \
+  | bcftools view --threads ${THREADS} -Oz -o "${MARKER_AB_VCF}" \
+    -i "F_MISSING<=${AB_MAX_MISSING} && AC>=2 && AC<=AN-2"
+else
+  echo "==> 7) AB masking disabled; carrying forward step-6 markers"
+  bcftools view --threads ${THREADS} -m2 -M2 -v snps -Oz -o "${MARKER_AB_VCF}" "${MARKER_VCF}"
+fi
 
 bcftools index -t --threads ${THREADS} "${MARKER_AB_VCF}"
 echo "Sites after AB masking + site re-filter: $(bcftools view -H ${MARKER_AB_VCF} | wc -l)"
@@ -153,11 +266,102 @@ bcftools view --threads ${THREADS} \
   -Oz -o "${MARKER_VCF_ACGT}" "${MARKER_AB_VCF}"
 bcftools index -t --threads ${THREADS} "${MARKER_VCF_ACGT}"
 
-echo "Final WASP SNP set (AB-masked, ACGT): $(bcftools view -H ${MARKER_VCF_ACGT} | wc -l)"
+echo "WASP-safe ACGT SNPs after initial QC: $(bcftools view -H ${MARKER_VCF_ACGT} | wc -l)"
 echo "Output: ${MARKER_VCF_ACGT}"
 
-echo "==> 9) Build STAR/WASP sites-only VCF"
-STAR_ONLY_VCF="${OUTDIR}/${OUTPREFIX}.star_only.vcf.gz"
-bcftools annotate -x FORMAT -Oz -o "${STAR_ONLY_VCF}" "${MARKER_VCF_ACGT}"
+# -----------------------------
+# 9) Build AA/GG sample lists
+# -----------------------------
+echo "==> 9) Build AA/GG sample lists"
+bcftools query -l "${FILLED}" | awk '/^AA/ {print > "AA.samples"} /^GG/ {print > "GG.samples"}'
+
+if [[ ! -s AA.samples || ! -s GG.samples ]]; then
+  echo "ERROR: Could not detect AA/GG samples from VCF sample names." >&2
+  exit 1
+fi
+
+echo "AA samples: $(wc -l < AA.samples)"
+echo "GG samples: $(wc -l < GG.samples)"
+
+# -----------------------------
+# 10) Split to pure subsets and fill AF tags per group
+# -----------------------------
+echo "==> 10) Compute AF in AA and GG separately"
+bcftools view -S AA.samples -Ou "${MARKER_VCF_ACGT}" \
+| bcftools +fill-tags -Oz -o "${OUTDIR}/${OUTPREFIX}.AA.filled.vcf.gz" -- -t AC,AN,AF,F_MISSING
+bcftools index -t "${OUTDIR}/${OUTPREFIX}.AA.filled.vcf.gz"
+
+bcftools view -S GG.samples -Ou "${MARKER_VCF_ACGT}" \
+| bcftools +fill-tags -Oz -o "${OUTDIR}/${OUTPREFIX}.GG.filled.vcf.gz" -- -t AC,AN,AF,F_MISSING
+bcftools index -t "${OUTDIR}/${OUTPREFIX}.GG.filled.vcf.gz"
+
+# -----------------------------
+# 11) Select parent-informative loci by deltaAF
+# -----------------------------
+echo "==> 11) Select parent-informative loci by deltaAF"
+AA_PASS="${OUTDIR}/${OUTPREFIX}.AA.pass.vcf.gz"
+GG_PASS="${OUTDIR}/${OUTPREFIX}.GG.pass.vcf.gz"
+
+bcftools view -i "F_MISSING<=${MAX_MISS_GROUP}" -Oz -o "${AA_PASS}" "${OUTDIR}/${OUTPREFIX}.AA.filled.vcf.gz"
+bcftools index -t "${AA_PASS}"
+
+bcftools view -i "F_MISSING<=${MAX_MISS_GROUP}" -Oz -o "${GG_PASS}" "${OUTDIR}/${OUTPREFIX}.GG.filled.vcf.gz"
+bcftools index -t "${GG_PASS}"
+
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%AF\n' "${AA_PASS}" | sort -k1,1 -k2,2n > "${OUTDIR}/AA.af.tsv"
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%AF\n' "${GG_PASS}" | sort -k1,1 -k2,2n > "${OUTDIR}/GG.af.tsv"
+
+join -t $'\t' -1 1 -2 1 \
+  <(awk 'BEGIN{OFS="\t"}{key=$1":"$2":"$3":"$4; print key,$5}' "${OUTDIR}/AA.af.tsv") \
+  <(awk 'BEGIN{OFS="\t"}{key=$1":"$2":"$3":"$4; print key,$5}' "${OUTDIR}/GG.af.tsv") \
+| awk -F'\t' -v OFS='\t' -v min_daf="${MIN_DAF}" '
+{
+  split($1,a,":"); chr=a[1]; pos=a[2]; ref=a[3]; alt=a[4];
+  afAA=$2+0; afGG=$3+0;
+  daf=afAA-afGG; if (daf<0) daf=-daf;
+  if (daf>=min_daf) print chr,pos,ref,alt,afAA,afGG,daf
+}' > "${OUTDIR}/${OUTPREFIX}.AA_vs_GG.deltaAF_markers.tsv"
+
+echo "deltaAF markers: $(wc -l < "${OUTDIR}/${OUTPREFIX}.AA_vs_GG.deltaAF_markers.tsv")"
+
+awk 'BEGIN{OFS="\t"}{print $1,$2}' "${OUTDIR}/${OUTPREFIX}.AA_vs_GG.deltaAF_markers.tsv" > "${OUTDIR}/${OUTPREFIX}.marker_sites.tsv"
+
+bcftools view -T "${OUTDIR}/${OUTPREFIX}.marker_sites.tsv" -Oz -o "${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.deltaAF.vcf.gz" "${MARKER_VCF_ACGT}"
+bcftools index -t "${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.deltaAF.vcf.gz"
+
+echo "WASP-safe deltaAF marker sites: $(bcftools view -H "${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.deltaAF.vcf.gz" | wc -l)"
+
+# -----------------------------
+# 12) Re-filter selected markers on hybrids only
+# -----------------------------
+echo "==> 12) Re-filter selected markers on hybrids"
+bcftools query -l "${FILLED}" | awk '/^(AG|GA)/ {print}' > HYBRIDS.samples
+
+if [[ ! -s HYBRIDS.samples ]]; then
+  echo "ERROR: Could not detect AG/GA hybrid samples from VCF sample names." >&2
+  exit 1
+fi
+
+echo "Hybrid samples: $(wc -l < HYBRIDS.samples)"
+
+bcftools view -S HYBRIDS.samples -Ou "${OUTDIR}/${OUTPREFIX}.AF_AB_markers.ACGT.deltaAF.vcf.gz" \
+| bcftools +setGT -Ou -- -t q -n . -i "FMT/DP<${HYB_MIN_DP}" \
+| bcftools +fill-tags -Ou -- -t AC,AN,AF,F_MISSING \
+| bcftools view -i "F_MISSING<=${HYB_MAX_MISSING} && AC>=1" -Oz -o "${HYB_MARKER_VCF}"
+
+bcftools index -t "${HYB_MARKER_VCF}"
+echo "Hybrid-filtered marker sites: $(bcftools view -H "${HYB_MARKER_VCF}" | wc -l)"
+
+# -----------------------------
+# 13) Build STAR/WASP outputs
+# -----------------------------
+echo "==> 13) Build STAR/WASP outputs"
+bcftools annotate -x FORMAT -Oz -o "${STAR_ONLY_VCF}" "${HYB_MARKER_VCF}"
 bcftools index -t "${STAR_ONLY_VCF}"
-echo "Output: ${STAR_ONLY_VCF}"
+
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\n' "${STAR_ONLY_VCF}" > "${STAR_WASP_SNP_LIST}"
+awk 'BEGIN{OFS="\t"} {print $1":"$2":"$3":"$4}' "${STAR_WASP_SNP_LIST}" > "${STAR_WASP_SNP_LIST_KEY}"
+
+echo "Final STAR/WASP VCF: ${STAR_ONLY_VCF}"
+echo "Final SNP list (CHROM POS REF ALT): ${STAR_WASP_SNP_LIST}"
+echo "Final SNP key list (CHROM:POS:REF:ALT): ${STAR_WASP_SNP_LIST_KEY}"
