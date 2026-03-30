@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N genome_prep
+#PBS -o 98-logfiles/gatk.prepare.ref.err
+#PBS -l walltime=02:00:00
+#PBS -l mem=20g
+#PBS -q omp
+#PBS -l ncpus=4
+#PBS -r n
+
+cd $PBS_O_WORKDIR
+
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+GTF="genomic.mito.gtf"
+FASTA="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+GENOMEFOLDER="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas"
+idx_gatk="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+idx_star="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/star_genome_mito_index"
+
+
+# GATK index
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+gatk CreateSequenceDictionary -R $FASTA -O $idx_gatk --TMP_DIR "$TmpDir"
+
+. /appli/bioinfo/gatk/4.4.0.0/delenv.sh
+echo "done gatk building conversion"
+# STAR index
+
+. /appli/bioinfo/star/2.7.10b/env.sh
+
+STAR --runThreadN 4 \
+        --runMode genomeGenerate \
+        --genomeDir "$idx_star" \
+        --genomeFastaFiles "$FASTA" \
+        --genomeChrBinNbits 10 \
+	--sjdbGTFfile "$GENOMEFOLDER"/"$GTF" \
+        --limitGenomeGenerateRAM 50000000000

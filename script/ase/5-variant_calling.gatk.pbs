@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#PBS -N haplotypecaller
+#PBS -o 98-logfiles/haplo.__BASE__.err
+#PBS -l walltime=20:00:00
+#PBS -l mem=15g
+#PBS -r n
+
+
+cd $PBS_O_WORKDIR
+
+# For genome
+base=__BASE__
+platform="ILLUMINA"
+OutDir="/home1/scratch/jleluyer/hybrids/5-snps"
+InDir="/home1/scratch/jleluyer/hybrids/5-snps"
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+
+mkdir -p $OutDir
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+gatk AddOrReplaceReadGroups \
+      I="$InDir"/"$base".split.bam \
+      O="$InDir"/"$base".head.bam \
+      RGID="$base" \
+      RGLB=lib1 \
+      RGPL="$platform" \
+      RGPU=phytness \
+      RGSM="$base"
+
+gatk BuildBamIndex --TMP_DIR "$TmpDir" \
+        --INPUT "$InDir"/"$base".head.bam \
+        --OUTPUT "$InDir"/"$base".head.bam.bai
+
+
+gatk HaplotypeCaller --tmp-dir "$TmpDir" \
+        -I "$InDir"/"$base".head.bam \
+        -R "$Reference" \
+	-O "$OutDir"/"$base".g.vcf.gz \
+	-ERC GVCF

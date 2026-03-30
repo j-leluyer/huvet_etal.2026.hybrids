@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#PBS -N prune
+#PBS -o 98-logfiles/pruneVCF.err
+#PBS -l walltime=10:00:00
+#PBS -l mem=32g
+#PBS -l ncpus=8
+#PBS -r n
+#PBS -q omp
+
+
+cd /home1/scratch/jleluyer/hybrids/5-snps/
+
+set -euo pipefail
+
+. /appli/anaconda/latest/etc/profile.d/conda.sh
+conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2
+
+#############################################
+# PCA QC with plink2 (mislabeling check)
+#############################################
+
+########## USER SETTINGS ##########
+THREADS=8
+
+# Optional pre-build exploratory SNP subset
+RUN_PREBUILD="${RUN_PREBUILD:-0}"  # 1=build dataset below, 0=use existing VCF_IN
+PREBUILD_JOINT_VCF="${PREBUILD_JOINT_VCF:-/scale/project/ifremer-phytness/hybrids/6-vcf/clean.biallelic.vcf.gz}"
+PREBUILD_VCF="${PREBUILD_VCF:-pb.explo.global.snps.bi.vcf.gz}"
+
+VCF_IN="pb.snps.bi.gtclean.vcf.gz"      # input VCF for PLINK steps
+OUTDIR="pca_qc_plink2"
+PREFIX="pbPCA"
+
+
+NPC=10
+
+########## CHECKS ##########
+command -v plink2 >/dev/null 2>&1 || { echo "ERROR: plink2 not found" >&2; exit 1; }
+
+mkdir -p "${OUTDIR}"
+cd "${OUTDIR}"
+# Thinning fraction: keep this proportion of variants uniformly at random.
+# 0.001 => ~0.1% of 6.88M ~ 6.9k SNPs; 0.005 => ~34k; 0.01 => ~69k
+THIN=0.005
+
+if ! [[ "${RUN_PREBUILD}" =~ ^[01]$ ]]; then
+  echo "ERROR: RUN_PREBUILD must be 0 or 1. Got '${RUN_PREBUILD}'" >&2
+  exit 1
+fi
+
+if (( RUN_PREBUILD == 1 )); then
+  echo "==> Pre-build exploratory SNP dataset"
+  bcftools view --threads "${THREADS}" -m2 -M2 -v snps -Ou "${PREBUILD_JOINT_VCF}" \
+  | bcftools +setGT -Ou -- -t q -n . -i 'FMT/DP<15' \
+  | bcftools +fill-tags -Ou -- -t AC,AN,MAF,F_MISSING \
+  | bcftools view -Oz -o "${PREBUILD_VCF}" -i 'MAF>0.1 && F_MISSING<=0.15'
+  bcftools index -t --threads "${THREADS}" "${PREBUILD_VCF}"
+  VCF_IN="${PREBUILD_VCF}"
+  echo "Pre-built VCF: ${VCF_IN}"
+fi
+
+: <<'SKIP'
+echo "==> Step 1: VCF -> BED"
+plink2 \
+  --vcf "../${VCF_IN}" \
+  --double-id \
+  --allow-extra-chr \
+  --set-missing-var-ids @:# \
+  --make-bed \
+  --out "${PREFIX}"
+
+echo "==> Step 2: Remove duplicate variants"
+plink2 \
+  --bfile "${PREFIX}" \
+  --allow-extra-chr \
+  --rm-dup exclude-all \
+  --make-bed \
+  --out "${PREFIX}_nodup"
+
+echo "==> Step 3: Thin variants (avoid LD estimation; N<50)"
+plink2 \
+  --bfile "${PREFIX}_nodup" \
+  --allow-extra-chr \
+  --thin "${THIN}" \
+  --make-bed \
+  --out "${PREFIX}_thin"
+
+N_THIN=$(wc -l < "${PREFIX}_thin.bim")
+echo "    SNPs after thinning: ${N_THIN}"
+SKIP
+# PCA
+/appli/bioinfo/plink/1.9/plink \
+  --bfile "${PREFIX}_thin" \
+  --allow-extra-chr \
+  --pca ${NPC} \
+  --out "${PREFIX}.pca"
+
+echo "==> DONE"
+echo "PCA eigenvectors: ${OUTDIR}/${PREFIX}.pca.eigenvec"
+echo "PCA eigenvalues : ${OUTDIR}/${PREFIX}.pca.eigenval"

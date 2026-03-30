@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#PBS -N Filtvcf
+#PBS -o 98-logfiles/filtVCF.err
+#PBS -l walltime=10:00:00
+#PBS -l mem=32g
+#PBS -l ncpus=8
+#PBS -r n
+#PBS -q omp
+
+
+cd $PBS_O_WORKDIR
+
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+OUTDIR="/home1/scratch/jleluyer/hybrids/5-snps"
+OUTPREFIX="pb"
+
+JOINT_VCF="${OUTDIR}/combined.raw.vcf.gz"
+SNP_VCF="${OUTDIR}/${OUTPREFIX}.snps.bi.vcf.gz"
+SNP_GT_CLEAN="${OUTDIR}/${OUTPREFIX}.snps.bi.gtclean.vcf.gz"
+
+AA_TAGS="${OUTDIR}/${OUTPREFIX}.AA.tags.vcf.gz"
+GG_TAGS="${OUTDIR}/${OUTPREFIX}.GG.tags.vcf.gz"
+
+MARKER_VCF="${OUTDIR}/${OUTPREFIX}.near_fixed_markers.vcf.gz"
+MARKER_VCF_ACGT="${OUTDIR}/${OUTPREFIX}.near_fixed_markers.ACGT.vcf.gz"
+
+REF="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+
+AA_LIST="0-info_files/AA.samples.txt"   # 7 AA sample names (exactly as in gVCF header)
+GG_LIST="0-info_files/GG.samples.txt"   # 7 GG sample names
+
+THREADS=8
+JAVA_MEM="32g"
+
+# Genotype-level cleaning thresholds (tune if needed)
+MIN_GQ=20
+MIN_DP=8
+
+# Near-fixed rules for 7 vs 7:
+# require >=6/7 called => AN >= 12 per group (diploid)
+MIN_AN_PER_GROUP=10
+# allow <=1 "wrong" allele per group among called alleles
+MAX_WRONG_ALLELES=3
+
+# module load
+. /appli/bioinfo/bcftools/1.23/env.sh
+
+echo "==> 2) Keep biallelic SNPs only"
+#bcftools view -v snps -m2 -M2 -Oz -o "${SNP_VCF}" "${JOINT_VCF}"
+#bcftools index -t "${SNP_VCF}"
+
+echo "==> 3) Set low-quality genotypes to missing (DP/GQ filters)"
+#bcftools +setGT "${SNP_VCF}" -Oz -o "${SNP_GT_CLEAN}" -- \
+#  -t q -n . -i "FMT/DP<${MIN_DP} || FMT/GQ<${MIN_GQ}"
+#bcftools index -t "${SNP_GT_CLEAN}"
+
+echo "==> 4) Compute AC/AN tags separately in AA and GG subsets"
+bcftools view -S "${AA_LIST}" -Oz -o "${OUTDIR}/${OUTPREFIX}.AA.vcf.gz" "${SNP_GT_CLEAN}"
+bcftools index -t "${OUTDIR}/${OUTPREFIX}.AA.vcf.gz"
+bcftools +fill-tags "${OUTDIR}/${OUTPREFIX}.AA.vcf.gz" -Oz -o "${AA_TAGS}" -- -t AC,AN
+bcftools index -t "${AA_TAGS}"
+
+bcftools view -S "${GG_LIST}" -Oz -o "${OUTDIR}/${OUTPREFIX}.GG.vcf.gz" "${SNP_GT_CLEAN}"
+bcftools index -t "${OUTDIR}/${OUTPREFIX}.GG.vcf.gz"
+bcftools +fill-tags "${OUTDIR}/${OUTPREFIX}.GG.vcf.gz" -Oz -o "${GG_TAGS}" -- -t AC,AN
+bcftools index -t "${GG_TAGS}"
+
+echo "==> 5) Build near-fixed opposite marker set"
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%AN\t%AC\n' "${AA_TAGS}" > "${OUTDIR}/AA.AC_AN.tsv"
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%AN\t%AC\n' "${GG_TAGS}" > "${OUTDIR}/GG.AC_AN.tsv"
+
+# Make join keys CHROM:POS:REF:ALT
+awk -F'\t' '{print $1":"$2":"$3":"$4"\t"$5"\t"$6}' "${OUTDIR}/AA.AC_AN.tsv" | sort > "${OUTDIR}/AA.key.tsv"
+awk -F'\t' '{print $1":"$2":"$3":"$4"\t"$5"\t"$6}' "${OUTDIR}/GG.AC_AN.tsv" | sort > "${OUTDIR}/GG.key.tsv"
+
+# Join and apply near-fixed opposite logic allowing <= MAX_WRONG_ALLELES
+join -t $'\t' -1 1 -2 1 "${OUTDIR}/AA.key.tsv" "${OUTDIR}/GG.key.tsv" \
+| awk -F'\t' -v MINAN="${MIN_AN_PER_GROUP}" -v W="${MAX_WRONG_ALLELES}" '
+  {
+    key=$1
+    AN_AA=$2; AC_AA=$3      # AC is ALT allele count
+    AN_GG=$4; AC_GG=$5
+
+    if (AN_AA<MINAN || AN_GG<MINAN) next
+
+    # Direction 1: AA ~REF (AC low), GG ~ALT (AC high)
+    dir1 = (AC_AA<=W && AC_GG>=AN_GG-W)
+
+    # Direction 2: AA ~ALT, GG ~REF
+    dir2 = (AC_AA>=AN_AA-W && AC_GG<=W)
+
+    if (dir1 || dir2) print key
+  }' > "${OUTDIR}/near_fixed_sites.keys"
+
+echo "Markers passing near-fixed criteria: $(wc -l < "${OUTDIR}/near_fixed_sites.keys")"
+
+echo "==> 6) Subset original SNP VCF to marker sites"
+awk -F'[:\t]' '{print $1"\t"$2}' "${OUTDIR}/near_fixed_sites.keys" | sort -u > "${OUTDIR}/near_fixed_sites.pos"
+
+bcftools view -T "${OUTDIR}/near_fixed_sites.pos" -Oz -o "${MARKER_VCF}" "${SNP_GT_CLEAN}"
+bcftools index -t "${MARKER_VCF}"
+
+echo "==> 7) Keep only simple A/C/G/T SNP alleles (recommended for WASP)"
+bcftools view -i 'REF~"^[ACGT]$" && ALT~"^[ACGT]$"' -Oz -o "${MARKER_VCF_ACGT}" "${MARKER_VCF}"
+bcftools index -t "${MARKER_VCF_ACGT}"
+
+echo "==> DONE"
+
+echo "Final marker VCF: ${MARKER_VCF_ACGT}"
+
+cd $OUTDIR
+
+# check loss
+# after near-fixed selection
+bcftools view -H pb.near_fixed_markers.ACGT.vcf.gz | wc -l

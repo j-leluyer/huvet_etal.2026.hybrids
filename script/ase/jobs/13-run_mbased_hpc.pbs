@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#PBS -N mbaSED
+#PBS -o 98-logfiles/mbased.out
+#PBS -e 98-logfiles/mbased.err
+#PBS -l walltime=24:00:00
+#PBS -l mem=64g
+#PBS -l ncpus=16
+#PBS -r n
+#PBS -q omp
+
+set -euo pipefail
+
+cd "$PBS_O_WORKDIR"
+
+# ---- configurable inputs ----
+ASE_DIR="${ASE_DIR:-data/aser}"
+GFF="${GFF:-data/genomic.CG.fixed.gff}"
+OUT_DIR="${OUT_DIR:-output/ase}"
+MIN_DEPTH="${MIN_DEPTH:-10}"
+NUM_SIM="${NUM_SIM:-100000}"
+
+# Parallel backend for runMBASED() added in run_mbased_from_ase_gff.R
+WORKERS="${WORKERS:-${PBS_NP:-16}}"
+BP_TYPE="${BP_TYPE:-multicore}"
+
+# Optional conda env with R + Bioconductor packages
+. /appli/anaconda/latest/etc/profile.d/conda.sh
+conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2 || true
+
+echo "ASE_DIR=${ASE_DIR}"
+echo "GFF=${GFF}"
+echo "OUT_DIR=${OUT_DIR}"
+echo "MIN_DEPTH=${MIN_DEPTH}"
+echo "NUM_SIM=${NUM_SIM}"
+echo "WORKERS=${WORKERS}"
+echo "BP_TYPE=${BP_TYPE}"
+
+mkdir -p "${OUT_DIR}" 98-logfiles
+
+Rscript --vanilla script/ase/run_mbased_from_ase_gff.R \
+  --ase-dir="${ASE_DIR}" \
+  --gff="${GFF}" \
+  --out-dir="${OUT_DIR}" \
+  --min-depth="${MIN_DEPTH}" \
+  --num-sim="${NUM_SIM}" \
+  --workers="${WORKERS}" \
+  --bp-type="${BP_TYPE}"
+
+echo "MBASED run completed."

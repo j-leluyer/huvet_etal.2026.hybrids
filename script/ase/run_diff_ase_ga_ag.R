@@ -2,6 +2,7 @@
 
 suppressPackageStartupMessages({
   if (!requireNamespace("data.table", quietly = TRUE)) install.packages("data.table", repos = "https://cloud.r-project.org")
+  if (!requireNamespace("writexl", quietly = TRUE)) install.packages("writexl", repos = "https://cloud.r-project.org")
   if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos = "https://cloud.r-project.org")
   if (!requireNamespace("GenomicRanges", quietly = TRUE)) BiocManager::install("GenomicRanges", ask = FALSE, update = FALSE)
   if (!requireNamespace("IRanges", quietly = TRUE)) BiocManager::install("IRanges", ask = FALSE, update = FALSE)
@@ -24,6 +25,7 @@ ase_dir <- get_arg("--ase-dir", "data/aser")
 pattern <- get_arg("--pattern", "*.ASE.table")
 gff_file <- get_arg("--gff", "data/genomic.mito.gff")
 out_prefix <- get_arg("--out-prefix", "output/ase/ga_ag_diffase")
+supp_xlsx <- get_arg("--supp-xlsx", "output/Table_S5.ASE_diffAG_GA.xlsx")
 feature_type <- get_arg("--feature-type", "gene")
 min_depth <- as.integer(get_arg("--min-depth", "10"))
 min_samples <- as.integer(get_arg("--min-samples-per-group", "3"))
@@ -33,6 +35,7 @@ if (!file.exists(gff_file)) stop("Missing GFF: ", gff_file)
 
 out_dir <- dirname(out_prefix)
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(dirname(supp_xlsx), recursive = TRUE, showWarnings = FALSE)
 
 sanitize_gff_for_import <- function(in_gff) {
   lines <- readLines(in_gff, warn = FALSE)
@@ -183,9 +186,11 @@ results <- gene_sample[, {
 }, by = gene_id]
 
 results[, q_value := p.adjust(p_value, method = "BH")]
-results <- merge(results, gene_annot, by = "gene_id", all.x = TRUE)
-fwrite(results, paste0(out_prefix, ".gene_diffASE_GA_vs_AG.tsv"), sep = "\t")
+ase_diffAG_GA <- merge(results, gene_annot, by = "gene_id", all.x = TRUE)
+fwrite(ase_diffAG_GA, paste0(out_prefix, ".gene_diffASE_GA_vs_AG.tsv"), sep = "\t")
+writexl::write_xlsx(list(ase_diffAG_GA = ase_diffAG_GA), path = supp_xlsx)
 
 message("Wrote: ", paste0(out_prefix, ".gene_sample_counts.tsv"))
 message("Wrote: ", paste0(out_prefix, ".gene_diffASE_GA_vs_AG.tsv"))
+message("Wrote: ", supp_xlsx)
 message("Done.")

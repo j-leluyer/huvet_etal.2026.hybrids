@@ -1,0 +1,63 @@
+#!/bin/bash
+#PBS -N STgatk.__BASE__
+#PBS -o 98-logfiles/gatk.__BASE__.err
+#PBS -l walltime=08:00:00
+#PBS -l mem=40g
+#####PBS -m ea
+#PBS -r n
+
+
+cd $PBS_O_WORKDIR
+
+# Global variables
+InDir="/home1/scratch/jleluyer/hybrids/4-mapped/"
+OutDir="/home1/scratch/jleluyer/hybrids/5-snps"
+
+mkdir -p $OutDir
+
+# For genome
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+base=__BASE__
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+REFERENCE="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+#CleanBam
+gatk CleanSam --TMP_DIR "$TmpDir" --INPUT "$InDir"/"$base".sorted.bam \
+        --OUTPUT "$OutDir"/"$base".clean.bam
+
+echo "cleaned bam"
+
+# dedup
+
+gatk MarkDuplicates --TMP_DIR "$TmpDir" \
+        --INPUT "$OutDir"/"$base".clean.bam \
+        --OUTPUT "$OutDir"/"$base".dedup.bam \
+	--REMOVE_DUPLICATES true \
+        -M "$OutDir"/"$base".metrics.txt
+
+echo "dedup bam"
+
+#bam index
+gatk BuildBamIndex --TMP_DIR "$TmpDir" \
+	--INPUT "$OutDir"/"$base".dedup.bam \
+	--OUTPUT "$OutDir"/"$base".dedup.bam.bai
+
+
+# Split Cigar strings reads
+gatk SplitNCigarReads --tmp-dir "$TmpDir" \
+	-I "$OutDir"/"$base".dedup.bam \
+	-O "$OutDir"/"$base".split.bam \
+	--refactor-cigar-string true \
+	-RF CigarContainsNoNOperator -RF GoodCigarReadFilter -R "$REFERENCE" 
+echo "split cigar"
+
+
+
+## Base recalibration
+### Need to have vcf file with known variation first !
+#java -Xmx35G -Djava.io.tmpdir="$TmpDir" -Dsamjdk.use_async_io_read_samtools=false -Dsamjdk.use_async_io_write_samtools=true -Dsamjdk.use_async_io_write_tribble=false -Dsamjdk.compression_level=2 -jar "$GATK_jar" BaseRecalibrator \
+ #  -I "$OutDir"/"$base".split.bam \
+# -R "$REFERENCE" \
+  # -O "$OutDir"/"$base".recal_data.table

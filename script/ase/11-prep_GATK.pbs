@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#PBS -N haplotypecaller
+#PBS -o 98-logfiles/haplo.__BASE__.err
+#PBS -l walltime=20:00:00
+#PBS -l mem=15g
+#PBS -r n
+#PBS -q omp
+#PBS -l ncpus=2
+
+cd $PBS_O_WORKDIR
+
+# For genome
+base=__BASE__
+OutDir="/home1/scratch/jleluyer/hybrids/5-snps"
+InDir="/home1/scratch/jleluyer/hybrids/4-mapped/starW"
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+MARKER_CLEAN_VFC="/home1/scratch/jleluyer/hybrids/5-snps/pb.AF_markers.ACGT.vcf.gz"
+platform="ILLUMINA"
+NCPUS=2
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+: << 'SKIP'
+#CleanBam
+gatk CleanSam --TMP_DIR "$TmpDir" --INPUT "$InDir"/"$base".wasp.bam \
+        --OUTPUT "$InDir"/"$base".clean.bam
+
+echo "cleaned bam"
+
+# dedup
+
+gatk MarkDuplicates --TMP_DIR "$TmpDir" \
+        --INPUT "$InDir"/"$base".clean.bam \
+        --OUTPUT "$InDir"/"$base".dedup.bam \
+	--REMOVE_DUPLICATES true \
+        -M "$InDir"/"$base".metrics.txt
+
+echo "dedup bam"
+
+#bam index
+gatk BuildBamIndex --TMP_DIR "$TmpDir" \
+	--INPUT "$InDir"/"$base".dedup.bam \
+	--OUTPUT "$InDir"/"$base".dedup.bam.bai
+
+
+# Split Cigar strings reads
+gatk SplitNCigarReads --tmp-dir "$TmpDir" \
+	-I "$InDir"/"$base".dedup.bam \
+	-O "$InDir"/"$base".split.bam \
+	--refactor-cigar-string true \
+	-RF CigarContainsNoNOperator -RF GoodCigarReadFilter -R "$Reference" 
+
+
+echo "split cigar"
+
+gatk AddOrReplaceReadGroups \
+      I="$InDir"/"$base".split.bam \
+      O="$InDir"/"$base".head.bam \
+      RGID="$base" \
+      RGLB=lib1 \
+      RGPL="$platform" \
+      RGPU=phytness \
+      RGSM="$base"
+
+gatk BuildBamIndex --TMP_DIR "$TmpDir" \
+        --INPUT "$InDir"/"$base".head.bam \
+        --OUTPUT "$InDir"/"$base".head.bam.bai
+
+SKIP
+
+gatk HaplotypeCaller --tmp-dir "$TmpDir" \
+        -I "$InDir"/"$base".head.bam \
+        -R "$Reference" \
+	-O "$OutDir"/"$base".g.vcf.gz \
+	-ERC GVCF \
+	--alleles "${MARKER_CLEAN_VFC}" \
+	-L markers.pad100.merged.bed --native-pair-hmm-threads $NCPUS
+
+echo "Genotyping calling done"
+# Call GATK mapping on specific SNPs
+

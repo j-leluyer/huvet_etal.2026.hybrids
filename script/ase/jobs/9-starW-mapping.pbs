@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Clean up
+rm 1-scripts/ase/jobs/STMAP*
+
+# launch scripts for Colosse
+for file in $(ls /home1/scratch/jleluyer/hybrids/3-trimmed/*paired.fastq.gz |grep -v -E "/(AA|GG)"|perl -pe 's/_R[12].paired.f(ast)?q.gz//'|sort -u)
+
+# fo testing
+#for file in $(ls 3-trimmed/*paired.fastq.gz|perl -pe 's/_R[12].paired.f(ast)?q.gz//'|sort -u)
+do
+	base=$(basename "$file")
+	toEval="cat 1-scripts/ase/9-star_wasp_mapping.pbs | sed 's/__BASE__/$base/g'"; eval $toEval > 1-scripts/ase/jobs/STMAP_"$base".pbs
+done
+
+
+#change jobs header
+
+#Submit jobs
+for i in $(ls 1-scripts/ase/jobs/STMAP*pbs); do qsub $i; done

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#PBS -N combineGvcf
+#PBS -o 98-logfiles/combine.hybrids.err
+#PBS -l walltime=10:00:00
+#PBS -l mem=30g
+#PBS -r n
+
+
+
+cd $PBS_O_WORKDIR
+
+OutDir="/home1/scratch/jleluyer/hybrids/5-snps"
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+ls -1 /home1/scratch/jleluyer/hybrids/5-snps/*.g.vcf.gz | grep -E '/(GA|AG)' >gvcf.hybrids.list
+
+gatk CombineGVCFs --tmp-dir "$TmpDir" \
+        -R "$Reference" \
+        -O "$OutDir"/combined.hybrids.raw.gvcf.gz \
+	--variant gvcf.hybrids.list
+
+. /appli/bioinfo/gatk/4.4.0.0/delenv.sh
+
+# index
+. /appli/bioinfo/tabix/0.2.6/env.sh
+tabix -p vcf "$OutDir"/combined.hybrids.raw.gvcf.gz
+. /appli/bioinfo/tabix/0.2.6/delenv.sh
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+## Create vcf output
+gatk GenotypeGVCFs --tmp-dir "$TmpDir" \
+   -R "$Reference" \
+   -V "$OutDir"/combined.hybrids.raw.gvcf.gz \
+   -O "$OutDir"/combined.hybrids.raw.vcf.gz

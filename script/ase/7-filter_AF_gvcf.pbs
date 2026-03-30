@@ -36,6 +36,11 @@ REF="/home1/datawork/jleluyer/00_ressources/genomes/C_angulata/ncbi_dataset/data
 THREADS=8
 JAVA_MEM="32g"
 
+# Optional exploratory global SNP subset (independent from main pipeline)
+RUN_EXPLO_GLOBAL="${RUN_EXPLO_GLOBAL:-0}"
+EXPLO_JOINT_VCF="${EXPLO_JOINT_VCF:-/scale/project/ifremer-phytness/hybrids/6-vcf/clean.biallelic.vcf.gz}"
+EXPLO_SNP_VCF="${EXPLO_SNP_VCF:-${OUTDIR}/explo.global.snps.bi.vcf.gz}"
+
 # Parent-informative and hybrid re-filter thresholds
 MIN_DAF="${MIN_DAF:-0.40}"                 # |AF_AA - AF_GG| threshold
 MAX_MISS_GROUP="${MAX_MISS_GROUP:-0.50}"   # missingness in each pure group
@@ -107,6 +112,7 @@ echo "ENABLE_AB_MASKING=${ENABLE_AB_MASKING}"
 echo "MIN_DAF=${MIN_DAF}, MAX_MISS_GROUP=${MAX_MISS_GROUP}"
 echo "HYB_MIN_DP=${HYB_MIN_DP}, HYB_MAX_MISSING=${HYB_MAX_MISSING}"
 echo "START_STEP=${START_STEP}"
+echo "RUN_EXPLO_GLOBAL=${RUN_EXPLO_GLOBAL}"
 
 if ! [[ "${START_STEP}" =~ ^[0-9]+$ ]]; then
   echo "ERROR: START_STEP must be numeric (e.g. 2, 3, 5, 7, 11). Got '${START_STEP}'" >&2
@@ -115,6 +121,11 @@ fi
 
 if ! [[ "${ENABLE_AB_MASKING}" =~ ^[01]$ ]]; then
   echo "ERROR: ENABLE_AB_MASKING must be 0 or 1. Got '${ENABLE_AB_MASKING}'" >&2
+  exit 1
+fi
+
+if ! [[ "${RUN_EXPLO_GLOBAL}" =~ ^[01]$ ]]; then
+  echo "ERROR: RUN_EXPLO_GLOBAL must be 0 or 1. Got '${RUN_EXPLO_GLOBAL}'" >&2
   exit 1
 fi
 
@@ -130,6 +141,16 @@ require_indexed_vcf () {
 
 . /appli/anaconda/latest/etc/profile.d/conda.sh
 conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2
+
+if (( RUN_EXPLO_GLOBAL == 1 )); then
+  echo "==> 1) Build exploratory global SNP subset"
+  bcftools view --threads "${THREADS}" -m2 -M2 -v snps -Ou "${EXPLO_JOINT_VCF}" \
+  | bcftools +setGT -Ou -- -t q -n . -i 'FMT/DP<15' \
+  | bcftools +fill-tags -Ou -- -t AC,AN,MAF,F_MISSING \
+  | bcftools view -Oz -o "${EXPLO_SNP_VCF}" -i 'MAF>0.1 && F_MISSING<=0.15'
+  bcftools index -t "${EXPLO_SNP_VCF}"
+  echo "Exploratory VCF written: ${EXPLO_SNP_VCF}"
+fi
 
 echo "==> 2) Keep biallelic SNPs only"
 if (( START_STEP <= 2 )); then

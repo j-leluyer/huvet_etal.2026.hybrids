@@ -1,0 +1,60 @@
+#!/bin/bash
+#PBS -N star._BASE__
+#PBS -o 98-logfiles/star.__BASE__.err
+#PBS -l walltime=02:00:00
+#PBS -l mem=30g
+#####PBS -m ea
+#PBS -l ncpus=12
+#PBS -q omp
+#PBS -r n
+
+
+# Global variables
+DATAOUTPUT="/home1/scratch/jleluyer/hybrids/4-mapped"
+DATAINPUT="/home1/scratch/jleluyer/hybrids/3-trimmed"
+
+# For genome
+GENOMEFOLDER="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas"
+FASTA="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+GENOME="star_genome_mito_index"
+platform="Illumina"
+NCPUS=8
+GTF="genomic.mito.gtf"
+
+
+cd $PBS_O_WORKDIR
+
+. /appli/bioinfo/star/2.7.11a/env.sh
+
+base=__BASE__
+
+    # Align reads
+    echo "Aligning $base"
+
+STAR \
+  --runThreadN "$NCPUS" \
+  --genomeDir "$GENOMEFOLDER"/"$GENOME" \
+  --readFilesIn \
+    "$DATAINPUT"/"$base"_R1.paired.fastq.gz \
+    "$DATAINPUT"/"$base"_R2.paired.fastq.gz \
+  --readFilesCommand "pigz -dc -p 8" \
+  --sjdbGTFfile "$GENOMEFOLDER"/"$GTF" \
+  --outFilterMismatchNoverReadLmax 0.04 \
+  --alignIntronMin 20 \
+  --alignIntronMax 500000 \
+  --outFilterMultimapNmax 1 \
+  --outFilterMatchNminOverLread 0.8 \
+  --outSAMattrRGline ID:"$base" SM:"$base" PL:ILLUMINA \
+  --outSAMtype BAM SortedByCoordinate \
+  --outFileNamePrefix "$DATAOUTPUT"/"$base"_ 
+
+. /appli/bioinfo/samtools/1.22.1/env.sh
+
+# concatenate sam
+samtools view  -@ 12 -m 1G -b "$DATAOUTPUT"/"$base"_Aligned.sortedByCoord.out.bam -q 10 -F 0x4 -F 0x100 -F 0x800 >"$DATAOUTPUT"/"$base".filtered.bam
+
+# name sorting bam
+echo "Creating sorted bam for $base"
+samtools sort -@ 12 "$DATAOUTPUT"/"$base".filtered.bam -o "$DATAOUTPUT"/"$base".sorted.bam
+samtools index "$DATAOUTPUT"/"$base".sorted.bam  
+

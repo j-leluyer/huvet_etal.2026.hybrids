@@ -1,0 +1,32 @@
+#PBS -N intervals
+#PBS -o 98-logfiles/mk_intervals.err
+#PBS -l walltime=00:20:00
+#PBS -l mem=5g
+#PBS -r n
+
+
+cd $PBS_O_WORKDIR
+
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+MARKER_CLEAN_VFC="/home1/scratch/jleluyer/hybrids/5-snps/pb.AF_markers.ACGT.vcf.gz"
+
+
+
+
+#samtools faidx "$Reference"
+cut -f1,2 "${Reference}.fai" > chr.sizes
+
+. /appli/bioinfo/bcftools/1.23/env.sh
+
+bcftools query -f'%CHROM\t%POS0\t%POS\n' "${MARKER_CLEAN_VFC}" > markers.bed
+
+
+. /appli/bioinfo/bedtools/2.30.0/env.sh
+
+bedtools slop -i markers.bed -g chr.sizes -b 100 \
+  | bedtools sort \
+  | bedtools merge \
+  > markers.pad100.merged.bed
+
+wc -l markers.bed markers.pad100.merged.bed
+

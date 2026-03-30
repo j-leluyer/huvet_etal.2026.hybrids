@@ -34,6 +34,15 @@ output/*
 # Temporary files
 *.tmp
 *.log
+temp/
 
 # Legacy cluster job scripts for ortho build
 script/ortho/jobs/
+
+# Large local references (not tracked)
+data/genomic.CA.fixed.gff
+data/genomic.CG.fixed.gff
+data/genomic.mito.gff
+info/CA_CG_all.tag.fa
+info/salmon_index/
+script/ase/__pycache__/

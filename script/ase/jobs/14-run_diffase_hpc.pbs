@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#PBS -N diffASE
+#PBS -o 98-logfiles/diffase.out
+#PBS -e 98-logfiles/diffase.err
+#PBS -l walltime=08:00:00
+#PBS -l mem=32g
+#PBS -l ncpus=8
+#PBS -r n
+#PBS -q omp
+
+set -euo pipefail
+
+cd "$PBS_O_WORKDIR"
+
+# ---- configurable inputs ----
+ASE_DIR="${ASE_DIR:-data/aser}"
+GFF="${GFF:-data/genomic.CG.fixed.gff}"
+OUT_PREFIX="${OUT_PREFIX:-output/ase/ga_ag_diffase}"
+MIN_DEPTH="${MIN_DEPTH:-10}"
+MIN_SAMPLES_PER_GROUP="${MIN_SAMPLES_PER_GROUP:-3}"
+
+. /appli/anaconda/latest/etc/profile.d/conda.sh
+conda activate /home1/datawork/jleluyer/00_ressources/conda_env/plink2 || true
+
+echo "ASE_DIR=${ASE_DIR}"
+echo "GFF=${GFF}"
+echo "OUT_PREFIX=${OUT_PREFIX}"
+echo "MIN_DEPTH=${MIN_DEPTH}"
+echo "MIN_SAMPLES_PER_GROUP=${MIN_SAMPLES_PER_GROUP}"
+
+mkdir -p "$(dirname "${OUT_PREFIX}")" 98-logfiles
+
+Rscript --vanilla script/ase/run_diff_ase_ga_ag.R \
+  --ase-dir="${ASE_DIR}" \
+  --gff="${GFF}" \
+  --out-prefix="${OUT_PREFIX}" \
+  --min-depth="${MIN_DEPTH}" \
+  --min-samples-per-group="${MIN_SAMPLES_PER_GROUP}"
+
+echo "GA-vs-AG differential ASE run completed."

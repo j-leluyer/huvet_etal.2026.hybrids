@@ -20,10 +20,24 @@ SITE_METRICS="$OUT_DIR/vcf_site_metrics.tsv"
 SUMMARY_OUT="$OUT_DIR/vcf_summary_stats.tsv"
 GRID_OUT="$OUT_DIR/vcf_threshold_grid.tsv"
 RECO_OUT="$OUT_DIR/vcf_recommended_thresholds.tsv"
+PURE_SAMPLES="$OUT_DIR/pure_AA_GG.samples"
+CHROM_LIST_OUT="$OUT_DIR/nb.chrom.txt"
+
+# Build pure-strain sample list (AA* and GG*)
+bcftools query -l "$INPUT_VCF" \
+  | awk '/^(AA|GG)/ {print}' > "$PURE_SAMPLES"
+
+if [[ ! -s "$PURE_SAMPLES" ]]; then
+  echo "No pure samples found (expected sample names starting with AA or GG)." >&2
+  exit 1
+fi
+
+N_PURE=$(wc -l < "$PURE_SAMPLES")
+echo "Detected pure samples (AA/GG): $N_PURE"
 
 # 1) Extract key per-site values; fill AN/AC/F_MISSING when missing
 #    (INFO/DP is read as-is because +fill-tags does not support INFO/DP)
-bcftools view -Ou "$INPUT_VCF" \
+bcftools view -S "$PURE_SAMPLES" -m2 -M2 -v snps -Ou "$INPUT_VCF" \
   | bcftools +fill-tags -Ou -- -t AN,AC,NS,F_MISSING \
   | bcftools query -f '%CHROM\t%POS\t%QUAL\t%INFO/DP\t%AN\t%AC\t%INFO/F_MISSING\n' \
   > "$RAW_METRICS"
@@ -161,3 +175,9 @@ echo " - $SITE_METRICS_GZ"
 echo " - $SUMMARY_OUT"
 echo " - $GRID_OUT"
 echo " - $RECO_OUT"
+
+bcftools view -S "$PURE_SAMPLES" -m2 -M2 -v snps -Ou "$INPUT_VCF" \
+  | bcftools query -f '%CHROM\n' | sort -u > "$CHROM_LIST_OUT"
+
+echo " - $PURE_SAMPLES"
+echo " - $CHROM_LIST_OUT"

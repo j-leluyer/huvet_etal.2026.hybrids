@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#PBS -N aser
+#PBS -o 98-logfiles/aser.__BASE__.err
+#PBS -l walltime=20:00:00
+#PBS -l mem=15g
+#PBS -r n
+
+
+cd $PBS_O_WORKDIR
+
+# For genome
+base=__BASE__
+OutDir="/home1/scratch/jleluyer/hybrids/4-mapped/starW"
+InDir="/home1/scratch/jleluyer/hybrids/4-mapped/starW"
+TmpDir="/home1/scratch/jleluyer/hybrids/gatk"
+Reference="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+index="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.dict"
+SAMPLE=__BASE__
+
+# For genome
+base=__BASE__
+REFERENCE="/home1/datawork/jleluyer/00_ressources/genomes/C_gigas/GCF_963853765.1_and_mito.fasta"
+
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+#CleanBam
+gatk CleanSam --TMP_DIR "$TmpDir" --INPUT "$InDir"/"$base".sorted.bam \
+        --OUTPUT "$OutDir"/"$base".clean.bam
+
+echo "cleaned bam"
+
+# dedup
+
+gatk MarkDuplicates --TMP_DIR "$TmpDir" \
+        --INPUT "$OutDir"/"$base".clean.bam \
+        --OUTPUT "$OutDir"/"$base".dedup.bam \
+	--REMOVE_DUPLICATES true \
+        -M "$OutDir"/"$base".metrics.txt
+
+echo "dedup bam"
+
+#bam index
+gatk BuildBamIndex --TMP_DIR "$TmpDir" \
+	--INPUT "$OutDir"/"$base".dedup.bam \
+	--OUTPUT "$OutDir"/"$base".dedup.bam.bai
+
+
+# Split Cigar strings reads
+gatk SplitNCigarReads --tmp-dir "$TmpDir" \
+	-I "$OutDir"/"$base".dedup.bam \
+	-O "$OutDir"/"$base".split.bam \
+	--refactor-cigar-string true \
+	-RF CigarContainsNoNOperator -RF GoodCigarReadFilter -R "$REFERENCE" 
+echo "split cigar"
+
+exit
+# Filter vcf for sample specific hetero
+. /appli/bioinfo/bcftools/1.23/env.sh
+
+bcftools view -s "$SAMPLE" -m2 -M2 -v snps /home1/scratch/jleluyer/hybrids/5-snps/pb.AF_markers.ACGT.vcf.gz | bcftools view -g het -Oz -o "$OutDir"/${SAMPLE}.hets.vcf.gz
+tabix -p vcf "$OutDir"/${SAMPLE}.hets.vcf.gz
+
+# Run gatk counts ASER
+. /appli/bioinfo/gatk/4.4.0.0/env.sh
+
+gatk ASEReadCounter \
+  -R $Reference \
+  -I "$InDir"/"$base".wasp.bam \
+  -V "$OutDir"/${SAMPLE}.hets.vcf.gz \
+  -O "$OutDir"/"$base".ASE.table \
+  --min-depth 10 \
+  --min-mapping-quality 20 \
+  --min-base-quality 20
