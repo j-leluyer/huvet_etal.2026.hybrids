@@ -30,6 +30,7 @@ output/*
 !output/Table_S2.ePST_summary.xlsx
 !output/Table_S3.gsea.xlsx
 !output/Table_S4.preservation_summary.xlsx
+!output/Table_S5.ASE_diffAG_GA.xlsx
 
 # Temporary files
 *.tmp
