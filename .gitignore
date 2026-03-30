@@ -46,3 +46,6 @@ data/genomic.mito.gff
 info/CA_CG_all.tag.fa
 info/salmon_index/
 script/ase/__pycache__/
+
+# Keep local ASE inputs out of git
+data/aser/
