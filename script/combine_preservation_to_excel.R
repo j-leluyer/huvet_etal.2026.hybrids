@@ -99,7 +99,7 @@ if (length(sheets) == 0) {
   stop("No preservation summary files were available to write into Table S4.")
 }
 
-out_xlsx <- file.path("output", "Table_S4.preservation_summary.xlsx")
+out_xlsx <- file.path("output", "Table_S5.preservation_summary.xlsx")
 writexl::write_xlsx(sheets, path = out_xlsx)
 
 message("Created: ", out_xlsx)

@@ -84,7 +84,7 @@ for (i in seq_along(ordered)) {
   sheets[[sheet_names[i]]] <- append_gene_names(raw_sheet)
 }
 
-out_xlsx <- file.path("output", "Table_S2.ePST_summary.xlsx")
+out_xlsx <- file.path("output", "Table_S3.ePST_summary.xlsx")
 writexl::write_xlsx(sheets, path = out_xlsx)
 
 message("Created: ", out_xlsx)

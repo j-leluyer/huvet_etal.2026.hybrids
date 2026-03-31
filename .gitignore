@@ -27,10 +27,11 @@ output/*
 # Keep ePST Table/Figure 4 artifacts tracked
 !output/fig4_epst_supporting.png
 !output/fig4_epst_supporting.pdf
-!output/Table_S2.ePST_summary.xlsx
-!output/Table_S3.gsea.xlsx
-!output/Table_S4.preservation_summary.xlsx
-!output/Table_S5.ASE_diffAG_GA.xlsx
+!output/Table_S2.dominance_thresholds.xlsx
+!output/Table_S3.ePST_summary.xlsx
+!output/Table_S4.gsea.xlsx
+!output/Table_S5.preservation_summary.xlsx
+!output/Table_S6.ASE_diffAG_GA.xlsx
 
 # Temporary files
 *.tmp

@@ -60,7 +60,7 @@ if (!is.na(counts_file)) {
   sheets[["ase_gene_sample_counts"]] <- readr::read_tsv(counts_file, show_col_types = FALSE, progress = FALSE)
 }
 
-out_xlsx <- file.path("output", "Table_S5.ASE_diffAG_GA.xlsx")
+out_xlsx <- file.path("output", "Table_S6.ASE_diffAG_GA.xlsx")
 writexl::write_xlsx(sheets, path = out_xlsx)
 
 message("Created: ", out_xlsx)

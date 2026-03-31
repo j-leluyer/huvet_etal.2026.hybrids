@@ -426,7 +426,7 @@ for (res in results) {
   workbook_sheets[[paste0("ranks_", suffix)]] <- res$ranks
 }
 
-writexl::write_xlsx(workbook_sheets, path = "output/Table_S3.gsea.xlsx")
+writexl::write_xlsx(workbook_sheets, path = "output/Table_S4.gsea.xlsx")
 
 message("Created:")
 message(" - output/Table_S1.DESeq2.xlsx")
@@ -438,4 +438,4 @@ for (res in results) {
   message(" - output/fgsea_", res$label, "_log2FC.tsv")
   message(" - output/fgsea_top_enrichment_", res$label, ".png (if at least one pathway)")
 }
-message(" - output/Table_S3.gsea.xlsx")
+message(" - output/Table_S4.gsea.xlsx")
